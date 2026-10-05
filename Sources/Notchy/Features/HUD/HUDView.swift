@@ -2,11 +2,17 @@ import SwiftUI
 
 enum HUDLayout {
     static let sideWidth: CGFloat = 95
+    static let volumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
+    static let volumeTrailingWidth: CGFloat = 80
     static let tallExtraHeight: CGFloat = 46
 
     static func size(for hud: HUDEvent, notch: CGSize) -> CGSize {
         if case .volume = hud.kind {
-            return NotchAccessoryLayout.size(notch: notch, leadingWidth: 0, trailingWidth: 0)
+            return NotchAccessoryLayout.size(
+                notch: notch,
+                leadingWidth: volumeLeadingWidth,
+                trailingWidth: volumeTrailingWidth
+            )
         }
         var h = notch.height
         switch hud.kind {
@@ -29,11 +35,9 @@ struct VolumeHUDView: View {
     var body: some View {
         NotchAccessory(
             notch: notch,
-            leadingWidth: HUDLayout.sideWidth,
-            trailingWidth: HUDLayout.sideWidth,
-            leadingAlignment: .trailing,
+            leadingWidth: HUDLayout.volumeLeadingWidth,
+            trailingWidth: HUDLayout.volumeTrailingWidth,
             trailingAlignment: .leading,
-            leadingInset: 4,
             trailingInset: 6
         ) {
             Image(systemName: Self.icon(level, muted))

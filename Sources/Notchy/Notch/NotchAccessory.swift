@@ -4,6 +4,10 @@ enum NotchAccessoryLayout {
     static func size(notch: CGSize, leadingWidth: CGFloat, trailingWidth: CGFloat) -> CGSize {
         CGSize(width: notch.width + leadingWidth + trailingWidth, height: notch.height)
     }
+
+    static func centerOffset(leadingWidth: CGFloat, trailingWidth: CGFloat) -> CGFloat {
+        (trailingWidth - leadingWidth) / 2
+    }
 }
 
 /// Lays out content on either side of the notch and reports the matching total size.

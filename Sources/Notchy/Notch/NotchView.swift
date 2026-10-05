@@ -51,13 +51,7 @@ struct NotchView: View {
 
     private var hudSize: CGSize? {
         guard !state.expanded, let hud = state.hud else { return nil }
-        if case .volume = hud.kind { return nil }
         return HUDLayout.size(for: hud, notch: state.notchSize)
-    }
-    private var volumeHUD: (level: Float, muted: Bool)? {
-        guard !state.expanded, let hud = state.hud,
-              case .volume(let level, let muted) = hud.kind else { return nil }
-        return (level, muted)
     }
     @AppStorage(Pref.liveActivity) private var liveOn = true
     @AppStorage(Pref.pausedActivityTimeout) private var pausedActivityTimeout = 5.0
@@ -70,7 +64,7 @@ struct NotchView: View {
     }
 
     private var liveSize: CGSize? {
-        guard !state.expanded, state.hud == nil else { return nil }
+        guard !state.expanded else { return nil }
         if pomodoro.started {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
@@ -82,6 +76,13 @@ struct NotchView: View {
         return LiveActivityLayout.size(notch: state.notchSize)
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
+    private var collapsedHorizontalOffset: CGFloat {
+        guard !state.expanded, let hud = state.hud, case .volume = hud.kind else { return 0 }
+        return NotchAccessoryLayout.centerOffset(
+            leadingWidth: HUDLayout.volumeLeadingWidth,
+            trailingWidth: HUDLayout.volumeTrailingWidth
+        )
+    }
     private var isCompact: Bool {
         tabs.count <= 1 && (activeTab == .media)
     }
