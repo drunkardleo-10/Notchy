@@ -93,8 +93,8 @@ struct NotchView: View {
     }
     private var expansionAnimation: Animation {
         state.expanded
-            ? .spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-            : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
+            ? NotchAnimation.notchOpen()
+            : NotchAnimation.notchClose()
     }
 
     private var shape: NotchShape {
@@ -193,7 +193,7 @@ struct NotchView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(expansionAnimation, value: state.expanded)
-        .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.showQueue)
+        .animation(NotchAnimation.state, value: state.showQueue)
         .animation(expansionAnimation, value: state.hud?.id)
         .animation(expansionAnimation, value: liveSize != nil)
         .onChange(of: media.isPlaying) { _, _ in updatePausedActivityTimer() }
@@ -295,7 +295,7 @@ struct NotchView: View {
             }
             .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55))
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: state.tab)
+        .animation(NotchAnimation.tabSelect, value: state.tab)
     }
 }
 
@@ -471,10 +471,10 @@ struct ArtworkView: View {
                         .asymmetric(
                             insertion: .opacity
                                 .combined(with: .scale(scale: 0.90))
-                                .animation(.spring(response: 0.42, dampingFraction: 0.8)),
+                                .animation(NotchAnimation.notchOpen()),
                             removal: .opacity
                                 .combined(with: .scale(scale: 1.06))
-                                .animation(.spring(response: 0.38, dampingFraction: 0.85))
+                                .animation(NotchAnimation.notchClose())
                         )
                     )
             } else {
@@ -513,8 +513,8 @@ struct MediaControlButtonStyle: ButtonStyle {
             }
             .foregroundStyle(.white)
             .scaleEffect(configuration.isPressed ? 0.85 : (hovering ? 1.05 : 1.0))
-            .animation(.spring(response: 0.28, dampingFraction: 0.65), value: configuration.isPressed)
-            .animation(.smooth(duration: 0.25), value: hovering)
+            .animation(NotchAnimation.press, value: configuration.isPressed)
+            .animation(NotchAnimation.hover, value: hovering)
             .onHover { hovering = $0 }
     }
 }
@@ -652,7 +652,7 @@ struct MediaView: View {
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
-            .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.showQueue)
+            .animation(NotchAnimation.state, value: state.showQueue)
         }
     }
 
