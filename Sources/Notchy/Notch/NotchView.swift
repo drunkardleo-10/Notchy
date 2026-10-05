@@ -86,10 +86,10 @@ struct NotchView: View {
             LinearGradient(
                 stops: [
                     .init(color: .black, location: 0.0),
-                    .init(color: .black, location: 0.45),
-                    .init(color: .black.opacity(0.55), location: 0.58),
-                    .init(color: .black.opacity(0.15), location: 0.75),
-                    .init(color: .clear, location: 0.90)
+                    .init(color: .black, location: 0.22),
+                    .init(color: .black.opacity(0.40), location: 0.42),
+                    .init(color: .black.opacity(0.10), location: 0.60),
+                    .init(color: .clear, location: 0.75)
                 ],
                 startPoint: .top,
                 endPoint: .bottom

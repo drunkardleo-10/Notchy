@@ -58,7 +58,16 @@ final class NotchState: ObservableObject {
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let panelPadding: CGFloat = 24
 
-    @Published var showQueue = false
+    @Published var showQueue = false {
+        didSet {
+            if !showQueue && oldValue {
+                queueClosedAt = Date()
+                onQueueClosed?()
+            }
+        }
+    }
+    var queueClosedAt: Date = .distantPast
+    var onQueueClosed: (() -> Void)?
 
     var expandedSize: CGSize {
         let active = NotchTab.allCases.filter { UserDefaults.standard.bool(forKey: $0.prefKey) }

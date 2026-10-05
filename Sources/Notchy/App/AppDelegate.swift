@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var monitors: [Any] = []
     private var expandWork: DispatchWorkItem?
+    private var collapseWork: DispatchWorkItem?
 
     private var dragBaseline = 0
     private var draggingContent = false
@@ -74,6 +75,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.positionPanel() }
+        }
+        state.onQueueClosed = { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.evaluateHover()
+            }
         }
         let notifications: [(String, () -> Void)] = [
             ("com.notchy.playPause", { [weak self] in self?.media.playPause() }),
@@ -165,6 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setExpanded(_ expanded: Bool) {
         guard state.expanded != expanded else { return }
         expandWork?.cancel()
+        collapseWork?.cancel()
+        collapseWork = nil
         if expanded {
             if let first = NotchTab.allCases.first(where: { Pref.bool($0.prefKey) }), !Pref.bool(state.tab.prefKey) {
                 state.tab = first
@@ -240,10 +248,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if state.expanded {
             guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
-            let s = state.expandedSize
+            var s = state.expandedSize
+            if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
+                s.width = max(s.width, NotchState.queueExpandedSize.width)
+            }
             let inside = loc.x >= f.midX - s.width / 2 - 14 && loc.x <= f.midX + s.width / 2 + 14
                 && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
-            if !inside { setExpanded(false) }
+            if !inside {
+                guard collapseWork == nil else { return }
+                let work = DispatchWorkItem { [weak self] in
+                    self?.collapseWork = nil
+                    self?.setExpanded(false)
+                }
+                collapseWork = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+            } else {
+                collapseWork?.cancel()
+                collapseWork = nil
+            }
             return
         }
 
