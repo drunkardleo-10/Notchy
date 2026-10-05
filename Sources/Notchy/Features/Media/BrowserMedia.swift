@@ -21,13 +21,13 @@ enum BrowserAction {
 
     var js: String {
         switch self {
-        case .toggleLoop: "var v=document.querySelector('video');if(v){v.loop=!v.loop}"
-        case .seek(let t): "var v=document.querySelector('video');if(v){v.currentTime=\(t)}"
-        case .playPause: "var v=document.querySelector('video');if(v){v.paused?v.play():v.pause()}"
-        case .play: "var v=document.querySelector('video');if(v){v.play()}"
-        case .pause: "var v=document.querySelector('video');if(v){v.pause()}"
-        case .next: "var b=document.querySelector('.ytp-next-button,.next-button');if(b){b.click()}"
-        case .previous: "var b=document.querySelector('.previous-button');if(b){b.click()}else{var v=document.querySelector('video');if(v){v.currentTime=0}}"
+        case .toggleLoop: "var v=document.querySelector('video,audio');if(v){v.loop=!v.loop}"
+        case .seek(let t): "var v=document.querySelector('video,audio');if(v){v.currentTime=\(t)}"
+        case .playPause: "var b=document.querySelector('.ytp-play-button,.play-pause-button,.playControls__play,button[data-testid=\"control-button-playpause\"]');if(b){b.click()}else{var v=document.querySelector('video,audio');if(v){v.paused?v.play():v.pause()}}"
+        case .play: "var v=document.querySelector('video,audio');if(v&&v.paused){v.play()}else{var b=document.querySelector('.ytp-play-button,.play-pause-button,.playControls__play,button[data-testid=\"control-button-playpause\"]');if(b)b.click()}"
+        case .pause: "var v=document.querySelector('video,audio');if(v&&!v.paused){v.pause()}else{var b=document.querySelector('.ytp-play-button,.play-pause-button,.playControls__play,button[data-testid=\"control-button-playpause\"]');if(b)b.click()}"
+        case .next: "var b=document.querySelector('.ytp-next-button,.next-button,.playControls__next,button.skipControl__next,button[data-testid=\"control-button-skip-forward\"],button[aria-label=\"Next\"]');if(b){b.click()}"
+        case .previous: "var b=document.querySelector('.ytp-prev-button,.previous-button,.playControls__prev,button.skipControl__previous,button[data-testid=\"control-button-skip-back\"],button[aria-label=\"Previous\"]');if(b){b.click()}else{var v=document.querySelector('video,audio');if(v){v.currentTime=0}}"
         }
     }
 }
@@ -51,7 +51,7 @@ enum BrowserMedia {
     private static let urlCondition = ["youtube.com/watch", "music.youtube.com", "youtube.com/shorts", "soundcloud.com", "open.spotify.com"]
         .map { "(u contains \"\($0)\")" }.joined(separator: " or ")
 
-    private static let probeJS = "(function(){var v=document.querySelector('video');var m=navigator.mediaSession&&navigator.mediaSession.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}return JSON.stringify({p:v?!v.paused:false,t:m?m.title:'',a:m?m.artist:'',i:a,c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false})})()"
+    private static let probeJS = "(function(){var v=document.querySelector('video,audio');var ms=navigator.mediaSession;var p=ms&&ms.playbackState==='playing'?true:(ms&&ms.playbackState==='paused'?false:(v?!v.paused:false));var m=ms&&ms.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}return JSON.stringify({p:p,t:m?m.title:'',a:m?m.artist:'',i:a,c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false})})()"
 
     static func bundleID(forApp name: String) -> String? { browsers.first { $0.name == name }?.bundleID }
 
@@ -99,7 +99,7 @@ enum BrowserMedia {
         return false
     }
 
-    nonisolated static func scan(browserNames: [String]) -> BrowserTrack? {
+    nonisolated static func scan(browserNames: [String], preferredURL: String? = nil) -> BrowserTrack? {
         var found: [BrowserTrack] = []
         for browser in browsers where browserNames.contains(browser.name) {
             let titleExpr = browser.safari ? "name of t" : "title of t"
@@ -131,6 +131,12 @@ enum BrowserMedia {
                 found.append(track)
             }
         }
+        if let pref = preferredURL, let match = found.first(where: { $0.url == pref && $0.playing }) {
+            return match
+        }
+        if let pref = preferredURL, let match = found.first(where: { $0.url == pref }) {
+            return match
+        }
         return found.first(where: \.playing) ?? found.first
     }
 
@@ -145,6 +151,7 @@ enum BrowserMedia {
                         try
                             \(jsCall)
                         end try
+                        return
                     end if
                 end repeat
             end repeat

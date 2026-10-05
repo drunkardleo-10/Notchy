@@ -39,6 +39,7 @@ final class MediaController: ObservableObject {
 
     private var native: (app: String, parts: [String])?
     private var browserTrack: BrowserTrack?
+    private var activeIsBrowser = false
     private var browserBusy = false
     private var artworkURL: String?
     private var artworkTask: URLSessionDataTask?
@@ -148,12 +149,16 @@ final class MediaController: ObservableObject {
                 guard self.queryEpoch == epoch else { return }
 
                 if Date().timeIntervalSince(self.lastActionTime) < 1.0, var b = best {
-                    b.parts[0] = self.desiredPlayingState ? "playing" : "paused"
-                    best = b
+                    if !self.activeIsBrowser {
+                        b.parts[0] = self.desiredPlayingState ? "playing" : "paused"
+                        best = b
+                    }
                 } else if let b = best {
                     let reported = b.parts[0] == "playing"
-                    self.desiredPlayingState = reported
-                    self.lastDispatchedState = reported
+                    if !self.activeIsBrowser {
+                        self.desiredPlayingState = reported
+                        self.lastDispatchedState = reported
+                    }
                 }
 
                 self.native = best
@@ -173,8 +178,9 @@ final class MediaController: ObservableObject {
             return
         }
         browserBusy = true
+        let currentURL = browserTrack?.url
         DispatchQueue.global(qos: .utility).async {
-            let track = BrowserMedia.scan(browserNames: names)
+            let track = BrowserMedia.scan(browserNames: names, preferredURL: currentURL)
             DispatchQueue.main.async {
                 self.browserBusy = false
                 self.browserTrack = track
@@ -195,12 +201,14 @@ final class MediaController: ObservableObject {
 
 
     private func recompute() {
-        let nativePlaying = native?.parts[0] == "playing"
-        if let n = native, nativePlaying { applyNative(n) }
-        else if let b = browserTrack, b.playing { applyBrowser(b) }
-        else if let n = native { applyNative(n) }
-        else if let b = browserTrack { applyBrowser(b) }
-        else {
+        if let n = native {
+            activeIsBrowser = false
+            applyNative(n)
+        } else if let b = browserTrack {
+            activeIsBrowser = true
+            applyBrowser(b)
+        } else {
+            activeIsBrowser = false
             title = ""; artist = ""; isPlaying = false; artwork = nil
             hasTrack = false; sourceLabel = ""; artworkURL = nil
             position = 0; duration = 0; positionDate = Date()
@@ -344,7 +352,9 @@ final class MediaController: ObservableObject {
         self.lastDispatchedState = newIsPlaying
 
         if !self.isPlaying {
-            position = polled
+            if abs(polled - position) > 2.0 || polled > position {
+                position = polled
+            }
             positionDate = Date()
             return
         }
@@ -465,10 +475,12 @@ final class MediaController: ObservableObject {
     private func control(native script: @escaping (String) -> String, browser action: BrowserAction?) {
         let n = native
         let b = browserTrack
-        let browserActive = b != nil && (b?.playing ?? false) && n?.parts[0] != "playing"
+        let useBrowser = activeIsBrowser
         controlQueue.async { [weak self] in
             guard let self else { return }
-            if let n, !browserActive || b == nil {
+            if useBrowser, let b, let action {
+                BrowserMedia.command(action, on: b)
+            } else if let n {
                 var error: NSDictionary?
                 NSAppleScript(source: script(n.app))?.executeAndReturnError(&error)
             } else if let b, let action {
@@ -503,46 +515,46 @@ final class MediaController: ObservableObject {
         lastDispatchedState = target
         lastDispatchedTime = Date()
 
-        let browserActive = browserTrack != nil && (browserTrack?.playing ?? false) && native?.parts[0] != "playing"
-        if let b = browserTrack, browserActive {
+        if activeIsBrowser, let b = browserTrack {
             pendingPlayPauseWorkItem?.cancel()
             let item = DispatchWorkItem {
                 BrowserMedia.command(target ? .play : .pause, on: b)
             }
             pendingPlayPauseWorkItem = item
             controlQueue.async(execute: item)
+        } else if let n = native {
+            controlQueue.async {
+                var error: NSDictionary?
+                NSAppleScript(source: "tell application \"\(n.app)\" to \(target ? "play" : "pause")")?.executeAndReturnError(&error)
+            }
         } else {
             Self.sendMediaRemoteCommand(target ? 0 : 1)
-            if let n = native {
-                controlQueue.async {
-                    var error: NSDictionary?
-                    NSAppleScript(source: "tell application \"\(n.app)\" to \(target ? "play" : "pause")")?.executeAndReturnError(&error)
-                }
-            }
         }
     }
 
     func playPause() {
+        let nowPos = currentPosition()
         let target = !isPlaying
         isPlaying = target
         desiredPlayingState = target
         lastActionTime = Date()
         queryEpoch += 1
 
-        if var n = native {
-            n.parts[0] = target ? "playing" : "paused"
-            native = n
-        }
-        if var b = browserTrack {
-            b.playing = target
-            browserTrack = b
+        if activeIsBrowser {
+            if var b = browserTrack {
+                b.playing = target
+                b.position = nowPos
+                browserTrack = b
+            }
+        } else {
+            if var n = native {
+                n.parts[0] = target ? "playing" : "paused"
+                native = n
+            }
         }
 
-        if target {
-            positionDate = Date()
-        } else {
-            position = currentPosition()
-        }
+        position = nowPos
+        positionDate = Date()
 
         dispatchPlaybackStateIfNeeded()
         scheduleRefresh(delay: 0.35)
@@ -568,9 +580,13 @@ final class MediaController: ObservableObject {
         positionDate = Date()
         lastActionTime = Date()
         queryEpoch += 1
-        let browserActive = browserTrack != nil && (browserTrack?.playing ?? false) && native?.parts[0] != "playing"
-        if let b = browserTrack, browserActive {
+        if activeIsBrowser, let b = browserTrack {
             controlQueue.async { BrowserMedia.command(.next, on: b) }
+        } else if let n = native {
+            controlQueue.async {
+                var error: NSDictionary?
+                NSAppleScript(source: "tell application \"\(n.app)\" to next track")?.executeAndReturnError(&error)
+            }
         } else {
             Self.sendMediaRemoteCommand(4)
         }
@@ -582,9 +598,13 @@ final class MediaController: ObservableObject {
         positionDate = Date()
         lastActionTime = Date()
         queryEpoch += 1
-        let browserActive = browserTrack != nil && (browserTrack?.playing ?? false) && native?.parts[0] != "playing"
-        if let b = browserTrack, browserActive {
+        if activeIsBrowser, let b = browserTrack {
             controlQueue.async { BrowserMedia.command(.previous, on: b) }
+        } else if let n = native {
+            controlQueue.async {
+                var error: NSDictionary?
+                NSAppleScript(source: "tell application \"\(n.app)\" to previous track")?.executeAndReturnError(&error)
+            }
         } else {
             Self.sendMediaRemoteCommand(5)
         }
