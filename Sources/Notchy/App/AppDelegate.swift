@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var monitors: [Any] = []
     private var expandWork: DispatchWorkItem?
     private var collapseWork: DispatchWorkItem?
+    private var glassPreviewWasExpanded: Bool?
 
     private var dragBaseline = 0
     private var draggingContent = false
@@ -130,8 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func positionPanel() {
-        guard let screen = NotchGeometry.targetScreen() else { return }
+    private func positionPanel(on target: NSScreen? = nil) {
+        guard let screen = target ?? NotchGeometry.targetScreen() else { return }
         state.notchSize = NotchGeometry.notchSize(for: screen)
         let f = screen.frame
         panel.setFrame(NSRect(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height,
@@ -153,9 +154,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleNotch() { setExpanded(!state.expanded) }
 
+    private func setGlassPreview(_ active: Bool) {
+        if active {
+            guard glassPreviewWasExpanded == nil else { return }
+            glassPreviewWasExpanded = state.expanded
+            if !state.expanded { setExpanded(true, interactive: false) }
+        } else {
+            guard let wasExpanded = glassPreviewWasExpanded else { return }
+            glassPreviewWasExpanded = nil
+            if !wasExpanded { setExpanded(false, interactive: false) }
+        }
+    }
+
     @objc func openSettings() {
         if settingsWindow == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView()))
+            let settings = SettingsView { [weak self] editing in
+                self?.setGlassPreview(editing)
+            }
+            let w = NSWindow(contentViewController: NSHostingController(rootView: settings))
             w.title = "notchy Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
@@ -168,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 
-    private func setExpanded(_ expanded: Bool) {
+    private func setExpanded(_ expanded: Bool, interactive: Bool = true, openingHaptic: Bool = true) {
         guard state.expanded != expanded else { return }
         expandWork?.cancel()
         collapseWork?.cancel()
@@ -178,18 +194,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 state.tab = first
             }
             if Pref.bool(Pref.media), !draggingContent { state.tab = .media }
-            if Pref.bool(Pref.hapticFeedback) {
+            if interactive && openingHaptic && Pref.bool(Pref.hapticFeedback) {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
+            state.hoveringNotch = false
             state.hud = nil
-            panel.ignoresMouseEvents = false
-            panel.makeKey()
+            panel.ignoresMouseEvents = !interactive
+            if interactive { panel.makeKey() }
         } else {
             state.showQueue = false
             panel.ignoresMouseEvents = true
-            panel.resignKey()
+            if interactive { panel.resignKey() }
         }
         state.expanded = expanded
+        if !expanded { positionPanel() }
     }
 
 
@@ -237,12 +255,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func evaluateHover() {
-        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return }
+        if glassPreviewWasExpanded != nil {
+            collapseWork?.cancel()
+            collapseWork = nil
+            return
+        }
         let loc = NSEvent.mouseLocation
-        let f = screen.frame
-        let notch = state.notchSize
 
         if state.expanded {
+            guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return }
+            let f = screen.frame
             guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
             var s = state.expandedSize
             if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
@@ -265,20 +287,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard let screen = NotchGeometry.screen(containing: loc)
+                ?? panel.screen
+                ?? NotchGeometry.targetScreen() else {
+            updateHoveringNotch(false)
+            expandWork?.cancel(); expandWork = nil
+            return
+        }
+        let f = screen.frame
+        let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
         let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth : draggingContent ? 60 : 8
         let slackY: CGFloat = draggingContent ? 30 : 4
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
-        guard hot, Pref.bool(Pref.hoverOpen) || draggingContent else {
+        let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
+        let canOpenOnHover = Pref.bool(Pref.hoverOpen) || draggingContent
+        updateHoveringNotch(hot && allowedDisplay && canOpenOnHover)
+        guard hot, allowedDisplay, canOpenOnHover else {
             expandWork?.cancel(); expandWork = nil
             return
         }
         guard expandWork == nil else { return }
+        positionPanel(on: screen)
+        let delay = draggingContent ? 0.05 : Pref.double(Pref.expandDelay)
         let work = DispatchWorkItem { [weak self] in
             self?.expandWork = nil
-            self?.setExpanded(true)
+            self?.setExpanded(true, openingHaptic: delay >= 0.25)
         }
         expandWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + (draggingContent ? 0.05 : 0.15), execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func updateHoveringNotch(_ hovering: Bool) {
+        guard state.hoveringNotch != hovering else { return }
+        state.hoveringNotch = hovering
+        guard hovering, Pref.bool(Pref.hapticFeedback) else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
 }

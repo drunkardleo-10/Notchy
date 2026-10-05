@@ -1,18 +1,105 @@
 import SwiftUI
 
+private struct HUDLevelBar: View {
+    let level: Float
+    let height: CGFloat
+    var hasGlow = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            Capsule()
+                .fill(.white.opacity(0.25))
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: geometry.size.width * CGFloat(min(max(level, 0), 1)))
+                        .shadow(color: .white.opacity(hasGlow ? 0.35 : 0), radius: hasGlow ? 8 : 0)
+                }
+        }
+        .frame(height: height)
+    }
+}
+
+private struct InlineHUDLevelReadout: View {
+    let level: Float
+
+    var body: some View {
+        HStack(spacing: 6) {
+            HUDLevelBar(level: level, height: 4, hasGlow: true)
+                .frame(width: 40)
+            Text("\(Int((level * 100).rounded()))")
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+        }
+    }
+}
+
+enum VolumeHUDStyle: CaseIterable, Identifiable {
+    case inline
+    case peek
+
+    var rawValue: String {
+        switch self {
+        case .inline: "inline"
+        case .peek: "peek"
+        }
+    }
+
+    init?(rawValue: String) {
+        switch rawValue {
+        case "inline", "compact": self = .inline
+        case "peek", "expanded": self = .peek
+        default: return nil
+        }
+    }
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .inline: "Inline"
+        case .peek: "Peek"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .inline: "waveform"
+        case .peek: "chevron.down"
+        }
+    }
+}
+
 enum HUDLayout {
     static let sideWidth: CGFloat = 95
-    static let volumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
-    static let volumeTrailingWidth: CGFloat = 80
+    static let inlineVolumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
+    static let inlineVolumeTrailingWidth: CGFloat = 80
+    static let peekLeadingWidth: CGFloat = 32
+    static let peekTrailingWidth: CGFloat = 54
+    static let peekHeight: CGFloat = 68
     static let tallExtraHeight: CGFloat = 46
 
-    static func size(for hud: HUDEvent, notch: CGSize) -> CGSize {
-        if case .volume = hud.kind {
+    static func volumeLeadingWidth(for style: VolumeHUDStyle) -> CGFloat {
+        style == .peek ? peekLeadingWidth : inlineVolumeLeadingWidth
+    }
+
+    static func volumeTrailingWidth(for style: VolumeHUDStyle) -> CGFloat {
+        style == .peek ? peekTrailingWidth : inlineVolumeTrailingWidth
+    }
+
+    static func size(for hud: HUDEvent, notch: CGSize, volumeStyle: VolumeHUDStyle = .inline) -> CGSize {
+        switch hud.kind {
+        case .volume, .brightness:
+            if volumeStyle == .peek { return peekSize(notch: notch) }
             return NotchAccessoryLayout.size(
                 notch: notch,
-                leadingWidth: volumeLeadingWidth,
-                trailingWidth: volumeTrailingWidth
+                leadingWidth: inlineVolumeLeadingWidth,
+                trailingWidth: inlineVolumeTrailingWidth
             )
+        default:
+            break
+        }
+        if case .lock(unlocked: true) = hud.kind {
+            return peekSize(notch: notch)
         }
         var h = notch.height
         switch hud.kind {
@@ -24,33 +111,80 @@ enum HUDLayout {
             height: h
         )
     }
+
+    static func peekSize(notch: CGSize) -> CGSize {
+        let size = NotchAccessoryLayout.size(
+            notch: notch,
+            leadingWidth: peekLeadingWidth,
+            trailingWidth: peekTrailingWidth
+        )
+        return CGSize(width: size.width, height: peekHeight)
+    }
 }
 
-/// A transient indicator laid out around the notch without changing the notch's shape or size.
+struct PeekHUDView<Content: View>: View {
+    let notch: CGSize
+    let leadingWidth: CGFloat
+    let trailingWidth: CGFloat
+    let height: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .frame(height: 26)
+                .padding(.bottom, 4)
+        }
+        .frame(
+            width: NotchAccessoryLayout.size(
+                notch: notch,
+                leadingWidth: leadingWidth,
+                trailingWidth: trailingWidth
+            ).width,
+            height: height
+        )
+    }
+}
+
+/// A transient volume indicator with inline and peek notch styles.
 struct VolumeHUDView: View {
     let level: Float
     let muted: Bool
     let notch: CGSize
+    var style: VolumeHUDStyle = .inline
 
     var body: some View {
-        NotchAccessory(
-            notch: notch,
-            leadingWidth: HUDLayout.volumeLeadingWidth,
-            trailingWidth: HUDLayout.volumeTrailingWidth,
-            trailingAlignment: .leading,
-            trailingInset: 6
-        ) {
-            Image(systemName: Self.icon(level, muted))
-                .font(.system(size: 13, weight: .semibold))
-        } trailing: {
-            HStack(spacing: 6) {
-                Capsule().fill(.white.opacity(0.25)).frame(width: 40, height: 4)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(.white)
-                            .frame(width: 40 * CGFloat(min(max(muted ? 0 : level, 0), 1)), height: 4)
+        Group {
+            if style == .peek {
+                PeekHUDView(
+                    notch: notch,
+                    leadingWidth: HUDLayout.peekLeadingWidth,
+                    trailingWidth: HUDLayout.peekTrailingWidth,
+                    height: HUDLayout.peekHeight
+                ) {
+                    HStack(spacing: 14) {
+                        Image(systemName: Self.icon(level, muted))
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 18, height: 26)
+                        HUDLevelBar(level: muted ? 0 : level, height: 6, hasGlow: true)
                     }
-                Text("\(Int(((muted ? 0 : level) * 100).rounded()))")
-                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                }
+            } else {
+                NotchAccessory(
+                    notch: notch,
+                    leadingWidth: HUDLayout.inlineVolumeLeadingWidth,
+                    trailingWidth: HUDLayout.inlineVolumeTrailingWidth,
+                    trailingAlignment: .leading,
+                    trailingInset: 6
+                ) {
+                    Image(systemName: Self.icon(level, muted))
+                        .font(.system(size: 13, weight: .semibold))
+                } trailing: {
+                    InlineHUDLevelReadout(level: muted ? 0 : level)
+                }
             }
         }
         .foregroundStyle(.white)
@@ -66,6 +200,7 @@ struct VolumeHUDView: View {
 struct HUDView: View {
     let hud: HUDEvent
     let notch: CGSize
+    var volumeStyle: VolumeHUDStyle = .inline
 
     var body: some View {
         VStack(spacing: 0) {
@@ -73,7 +208,12 @@ struct HUDView: View {
             case .volume:
                 EmptyView()
             case .brightness(let level):
-                levelRow(icon: level > 0.5 ? "sun.max.fill" : "sun.min.fill", level: level)
+                let icon = level > 0.5 ? "sun.max.fill" : "sun.min.fill"
+                if volumeStyle == .peek {
+                    peekLevelRow(icon: icon, level: level)
+                } else {
+                    inlineLevelRow(icon: icon, level: level)
+                }
             case .airpods(let name, let battery):
                 tallRow(icon: Self.airpodsIcon(name), title: name, subtitle: battery.map { "Connected · \($0)" } ?? "Connected")
             case .battery(let percent, let state):
@@ -81,7 +221,25 @@ struct HUDView: View {
             case .message(let icon, let title, let subtitle):
                 tallRow(icon: icon, title: title, subtitle: subtitle)
             case .lock(let unlocked):
-                symbolRow(icon: unlocked ? "lock.open.fill" : "lock.fill", text: unlocked ? "Unlocked" : "Locked")
+                if unlocked {
+                    PeekHUDView(
+                        notch: notch,
+                        leadingWidth: HUDLayout.peekLeadingWidth,
+                        trailingWidth: HUDLayout.peekTrailingWidth,
+                        height: HUDLayout.peekHeight
+                    ) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "lock.open.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .frame(width: 18, height: 26)
+                            Text("Unlocked")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer(minLength: 0)
+                        }
+                    }
+                } else {
+                    symbolRow(icon: "lock.fill", text: "Locked")
+                }
             case .capsLock(let on):
                 symbolRow(icon: on ? "capslock.fill" : "capslock", text: on ? "Caps On" : "Caps Off")
             }
@@ -117,24 +275,37 @@ struct HUDView: View {
         }
     }
 
-    private func levelRow(icon: String, level: Float) -> some View {
-        HStack(spacing: 0) {
-            Image(systemName: icon).font(.system(size: 13, weight: .semibold))
-                .padding(.trailing, 4)
-                .frame(width: HUDLayout.sideWidth, alignment: .trailing)
-            Spacer().frame(width: notch.width)
-            HStack(spacing: 6) {
-                Capsule().fill(.white.opacity(0.25)).frame(width: 40, height: 4)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(.white).frame(width: 40 * CGFloat(min(max(level, 0), 1)), height: 4)
-                    }
-                Text("\(Int((level * 100).rounded()))").font(.system(size: 11, weight: .medium).monospacedDigit())
-            }
-            .padding(.leading, 6)
-            .frame(width: HUDLayout.sideWidth, alignment: .leading)
+    private func inlineLevelRow(icon: String, level: Float) -> some View {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: HUDLayout.inlineVolumeLeadingWidth,
+            trailingWidth: HUDLayout.inlineVolumeTrailingWidth,
+            trailingAlignment: .leading,
+            trailingInset: 6
+        ) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+        } trailing: {
+            InlineHUDLevelReadout(level: level)
         }
-        .frame(height: notch.height)
         .animation(.easeOut(duration: 0.12), value: level)
+    }
+
+    private func peekLevelRow(icon: String, level: Float) -> some View {
+        PeekHUDView(
+            notch: notch,
+            leadingWidth: HUDLayout.peekLeadingWidth,
+            trailingWidth: HUDLayout.peekTrailingWidth,
+            height: HUDLayout.peekHeight
+        ) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 18, height: 26)
+                HUDLevelBar(level: level, height: 6, hasGlow: true)
+            }
+            .animation(.easeOut(duration: 0.12), value: level)
+        }
     }
 
     private static func airpodsIcon(_ name: String) -> String {

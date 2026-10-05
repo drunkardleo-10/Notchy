@@ -54,7 +54,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
 @MainActor
 final class NotchState: ObservableObject {
     static let compactExpandedSize = CGSize(width: 480, height: 186)
-    static let queueExpandedSize = CGSize(width: 780, height: 186)
+    static let queueExpandedSize = CGSize(width: 820, height: 186)
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let panelPadding: CGFloat = 24
 
@@ -78,6 +78,7 @@ final class NotchState: ObservableObject {
     }
 
     @Published var expanded = false
+    @Published var hoveringNotch = false
     @Published var tab: NotchTab = .media
     @Published var dropTargeted = false
     @Published var hud: HUDEvent?
@@ -85,8 +86,26 @@ final class NotchState: ObservableObject {
 }
 
 enum NotchGeometry {
+    static var hasExternalDisplays: Bool {
+        NSScreen.screens.count > 1
+    }
+
+    static func screen(containing point: CGPoint) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.contains(point) }
+    }
+
+    static func allowsHoverExpansion(on screen: NSScreen) -> Bool {
+        let mainScreen = NSScreen.screens.first(where: isBuiltIn) ?? NSScreen.screens.first ?? NSScreen.main
+        return sameDisplay(screen, mainScreen)
+            ? Pref.bool(Pref.expandOnMainDisplay)
+            : Pref.bool(Pref.expandOnExternalDisplays)
+    }
+
     static func targetScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first
+        NSScreen.screens.first { $0.safeAreaInsets.top > 0 }
+            ?? NSScreen.screens.first(where: isBuiltIn)
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
     }
 
     static func notchSize(for screen: NSScreen) -> CGSize {
@@ -96,6 +115,24 @@ enum NotchGeometry {
                           height: screen.safeAreaInsets.top)
         }
         return CGSize(width: 190, height: 32)
+    }
+
+    private static func isBuiltIn(_ screen: NSScreen) -> Bool {
+        guard let displayNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+            return screen.safeAreaInsets.top > 0
+        }
+        return CGDisplayIsBuiltin(CGDirectDisplayID(displayNumber.uint32Value)) != 0
+    }
+
+    private static func sameDisplay(_ lhs: NSScreen, _ rhs: NSScreen?) -> Bool {
+        guard let rhs else { return false }
+        guard
+            let leftNumber = lhs.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
+            let rightNumber = rhs.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+        else {
+            return lhs === rhs
+        }
+        return leftNumber.uint32Value == rightNumber.uint32Value
     }
 }
 

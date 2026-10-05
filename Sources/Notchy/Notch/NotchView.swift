@@ -27,34 +27,6 @@ private extension AnyTransition {
     }
 }
 
-private struct NotchBackgroundGradient: View, Animatable {
-    var progress: Double
-
-    var animatableData: Double {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    var body: some View {
-        LinearGradient(
-            stops: [
-                stop(1, at: 0.0),
-                stop(1, at: 0.30),
-                stop(0.40, at: 0.52),
-                stop(0.10, at: 0.70),
-                stop(0, at: 0.86)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private func stop(_ openOpacity: Double, at location: Double) -> Gradient.Stop {
-        let opacity = 1 + (openOpacity - 1) * progress
-        return .init(color: .black.opacity(opacity), location: location)
-    }
-}
-
 struct VisualEffectBackground: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .popover
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
@@ -88,10 +60,18 @@ struct NotchView: View {
 
     @Namespace private var tabNamespace
     @Namespace private var albumArtNamespace
+    @Namespace private var visualizerNamespace
 
     @AppStorage(Pref.shelf) private var shelfOn = true
     @AppStorage(Pref.clipboard) private var clipboardOn = true
     @AppStorage(Pref.media) private var mediaOn = true
+    @AppStorage(Pref.glassLevel) private var glassLevel = 0.5
+    @AppStorage(Pref.volumeHUDStyle) private var volumeHUDStyleRawValue = VolumeHUDStyle.inline.rawValue
+    @AppStorage(Pref.notchAnimationSpeed) private var animationSpeedRawValue = NotchAnimationSpeed.normal.rawValue
+
+    private var volumeHUDStyle: VolumeHUDStyle {
+        VolumeHUDStyle(rawValue: volumeHUDStyleRawValue) ?? .inline
+    }
 
     private var tabs: [NotchTab] {
         let active = NotchTab.allCases.filter { UserDefaults.standard.bool(forKey: $0.prefKey) }
@@ -104,7 +84,7 @@ struct NotchView: View {
 
     private var hudSize: CGSize? {
         guard !state.expanded, let hud = state.hud else { return nil }
-        return HUDLayout.size(for: hud, notch: state.notchSize)
+        return HUDLayout.size(for: hud, notch: state.notchSize, volumeStyle: volumeHUDStyle)
     }
     @AppStorage(Pref.liveActivity) private var liveOn = true
     @AppStorage(Pref.pausedActivityTimeout) private var pausedActivityTimeout = 5.0
@@ -130,10 +110,16 @@ struct NotchView: View {
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
     private var collapsedHorizontalOffset: CGFloat {
-        guard !state.expanded, let hud = state.hud, case .volume = hud.kind else { return 0 }
+        guard !state.expanded, let hud = state.hud else { return 0 }
+        switch hud.kind {
+        case .volume, .brightness:
+            guard volumeHUDStyle == .inline else { return 0 }
+        default:
+            return 0
+        }
         return NotchAccessoryLayout.centerOffset(
-            leadingWidth: HUDLayout.volumeLeadingWidth,
-            trailingWidth: HUDLayout.volumeTrailingWidth
+            leadingWidth: HUDLayout.volumeLeadingWidth(for: volumeHUDStyle),
+            trailingWidth: HUDLayout.volumeTrailingWidth(for: volumeHUDStyle)
         )
     }
     private var isCompact: Bool {
@@ -154,24 +140,32 @@ struct NotchView: View {
     private var shape: NotchShape {
         let compact = state.expanded && isCompact
         return NotchShape(
-            topRadius: state.expanded ? (compact ? 35 : 19) : 6,
-            bottomRadius: state.expanded ? (compact ? 35 : 24) : 14
+            topRadius: state.expanded ? (compact ? 35 : 19) : (isPeekHUD ? 8 : 6),
+            bottomRadius: state.expanded ? (compact ? 35 : 24) : (isPeekHUD ? 12 : 14)
         )
+    }
+
+    private var isPeekHUD: Bool {
+        guard !state.expanded, let hud = state.hud else { return false }
+        switch hud.kind {
+        case .volume where volumeHUDStyle == .peek: return true
+        case .brightness where volumeHUDStyle == .peek: return true
+        case .lock(unlocked: true): return true
+        default: return false
+        }
     }
 
     private var notchBackground: some View {
         ZStack {
             if #available(macOS 26.0, *) {
-                // Keep the native glass mounted through both notch states so the
-                // background doesn't pop or overshoot while the panel animates.
-                Color.clear
-                    .glassEffect(.clear, in: shape)
+                Color.clear.glassEffect(.clear, in: shape)
             } else {
-                Rectangle()
-                    .fill(.ultraThinMaterial)
+                Rectangle().fill(.ultraThinMaterial)
             }
 
-            NotchBackgroundGradient(progress: state.expanded ? 1 : 0)
+            Color.black.opacity(DynamicGlassStyle.blackOpacity(for: glassLevel))
+
+            DynamicGlassGradient(expansion: state.expanded ? 1 : 0)
                 .animation(expansionAnimation, value: state.expanded)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -205,9 +199,9 @@ struct NotchView: View {
                 if let hud = state.hud, let size = hudSize {
                     Group {
                         if case .volume(let level, let muted) = hud.kind {
-                            VolumeHUDView(level: level, muted: muted, notch: state.notchSize)
+                            VolumeHUDView(level: level, muted: muted, notch: state.notchSize, style: volumeHUDStyle)
                         } else {
-                            HUDView(hud: hud, notch: state.notchSize)
+                            HUDView(hud: hud, notch: state.notchSize, volumeStyle: volumeHUDStyle)
                         }
                     }
                     .frame(width: size.width, height: size.height)
@@ -231,7 +225,8 @@ struct NotchView: View {
                             LiveActivityView(
                                 media: media,
                                 notch: state.notchSize,
-                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil
+                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil,
+                                visualizerNamespace: state.hud == nil ? visualizerNamespace : nil
                             )
                         }
                     }
@@ -249,8 +244,10 @@ struct NotchView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(expansionAnimation, value: state.expanded)
+        .animation(expansionAnimation, value: animationSpeedRawValue)
         .animation(NotchAnimation.state, value: state.showQueue)
         .animation(expansionAnimation, value: state.hud?.id)
+        .animation(expansionAnimation, value: volumeHUDStyleRawValue)
         .animation(expansionAnimation, value: liveSize != nil)
         .onChange(of: media.isPlaying) { _, _ in updatePausedActivityTimer() }
         .onChange(of: media.hasTrack) { _, _ in updatePausedActivityTimer() }
@@ -294,7 +291,12 @@ struct NotchView: View {
             }
             Group {
                 switch activeTab {
-                case .media: MediaView(media: media, state: state, albumArtNamespace: albumArtNamespace)
+                case .media: MediaView(
+                    media: media,
+                    state: state,
+                    albumArtNamespace: albumArtNamespace,
+                    visualizerNamespace: visualizerNamespace
+                )
                 case .shelf: ShelfView(shelf: shelf, targeted: state.dropTargeted)
                 case .clipboard: ClipboardView(clipboard: clipboard)
                 case .calendar: CalendarView(calendar: calendar)
@@ -317,7 +319,7 @@ struct NotchView: View {
         HStack(spacing: 6) {
             ForEach(tabs) { tab in
                 Button {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                    withAnimation(NotchAnimation.spring(response: 0.32, dampingFraction: 0.8)) {
                         state.tab = tab
                     }
                 } label: {
@@ -681,16 +683,12 @@ struct MediaView: View {
     @ObservedObject var media: MediaController
     @ObservedObject var state: NotchState
     var albumArtNamespace: Namespace.ID? = nil
+    var visualizerNamespace: Namespace.ID? = nil
     @State private var favorite = false
 
     var body: some View {
         if !media.hasTrack {
-            VStack(spacing: 4) {
-                Image(systemName: "music.note").font(.system(size: 20))
-                Text("Nothing playing").font(.system(size: 12, weight: .medium))
-                Text("Play something in Music, Spotify or a browser tab").font(.system(size: 10))
-            }
-            .foregroundStyle(.white.opacity(0.5)).frame(maxWidth: .infinity, maxHeight: .infinity)
+            EmptyMediaView()
         } else {
             HStack(spacing: 0) {
                 playerSection
@@ -705,6 +703,7 @@ struct MediaView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
 
                     PlayingNextView(media: media)
+                        .padding(.trailing, 24)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -738,7 +737,12 @@ struct MediaView: View {
 
                 Spacer(minLength: 8)
 
-                EqualizerBars(active: media.isPlaying, useGradient: true)
+                EqualizerBars(
+                    active: media.isPlaying,
+                    useGradient: true,
+                    tint: media.artworkTint,
+                    namespace: state.expanded ? visualizerNamespace : nil
+                )
             }
 
             SeekBar(media: media)
@@ -753,7 +757,7 @@ struct MediaView: View {
             HStack {
                 HStack(spacing: 6) {
                     Button {
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.78)) {
+                        withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
                             state.showQueue.toggle()
                         }
                     } label: {
@@ -822,6 +826,18 @@ struct MediaView: View {
                 .buttonStyle(MediaControlButtonStyle())
             }
         }
+    }
+}
+
+struct EmptyMediaView: View {
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "music.note").font(.system(size: 20))
+            Text("Nothing playing").font(.system(size: 12, weight: .medium))
+            Text("Play something in Music, Spotify or a browser tab").font(.system(size: 10))
+        }
+        .foregroundStyle(.white.opacity(0.5))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

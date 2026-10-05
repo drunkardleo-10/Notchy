@@ -147,6 +147,7 @@ struct SettingRow: View {
     let color: Color
     let title: String
     var subtitle: String? = nil
+    var help: String? = nil
     @Binding var isOn: Bool
     var body: some View {
         HStack(spacing: 12) {
@@ -159,9 +160,14 @@ struct SettingRow: View {
                     .foregroundStyle(.white)
             }
             VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
+                HStack(spacing: 7) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.92))
+                    if let help {
+                        SettingsInfoIcon(help: help)
+                    }
+                }
                 if let subtitle {
                     Text(subtitle)
                         .font(.system(size: 11.5))
@@ -173,6 +179,49 @@ struct SettingRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 14)
+    }
+}
+
+struct VolumeHUDStyleSelector: View {
+    @Binding var selection: String
+
+    private var selectedStyle: VolumeHUDStyle {
+        VolumeHUDStyle(rawValue: selection) ?? .inline
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(VolumeHUDStyle.allCases) { style in
+                let isSelected = selectedStyle == style
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        selection = style.rawValue
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: style.icon)
+                            .font(.system(size: 11, weight: .semibold))
+                        Text(style.title)
+                            .font(.system(size: 11.5, weight: isSelected ? .semibold : .medium))
+                    }
+                    .foregroundStyle(isSelected ? .white : .white.opacity(0.6))
+                    .frame(maxWidth: .infinity, minHeight: 30)
+                    .background {
+                        if isSelected {
+                            Capsule().fill(.white.opacity(0.15))
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityLabel("\(style.title) volume and brightness indicators")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Capsule().fill(.white.opacity(0.07)))
+        .overlay { Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 1) }
+        .frame(width: 190)
     }
 }
 
@@ -247,7 +296,154 @@ struct QuickActionButton: View {
     }
 }
 
+private struct SettingsInfoIcon: View {
+    let help: String
+
+    var body: some View {
+        Image(systemName: "info.circle.fill")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.5))
+            .help(help)
+            .accessibilityLabel(help)
+    }
+}
+
+private struct ExpandTargetsRow: View {
+    @Binding var mainMac: Bool
+    @Binding var externalDisplays: Bool
+    let externalDisplaysAvailable: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowIcon(icon: "display", color: .cyan)
+            HStack(spacing: 7) {
+                Text("Expand on")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                SettingsInfoIcon(help: "Choose which displays open the shelf when you hover over the notch.")
+            }
+            Spacer(minLength: 4)
+            Toggle("Main Mac", isOn: $mainMac)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .font(.system(size: 12, weight: .medium))
+            Toggle("External displays", isOn: $externalDisplays)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .font(.system(size: 12, weight: .medium))
+                .disabled(!externalDisplaysAvailable)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+    }
+}
+
+private struct ExpandDelayRow: View {
+    @Binding var delay: Double
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowIcon(icon: "timer", color: .orange)
+            HStack(spacing: 7) {
+                Text("Expand delay")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                SettingsInfoIcon(help: "Wait this long before opening the shelf after you hover over the notch.")
+            }
+            Spacer(minLength: 6)
+            Slider(value: $delay, in: 0...1.5, step: 0.05)
+                .frame(width: 180)
+            Text(String(format: "%.2fs", delay))
+                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(width: 50, alignment: .trailing)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+    }
+}
+
+private struct AnimationSpeedRow: View {
+    @Binding var selection: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SettingsRowIcon(icon: "hare.fill", color: .purple)
+            HStack(spacing: 7) {
+                Text("Animation speed")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.92))
+                SettingsInfoIcon(help: "Adjust the speed of notch and shelf animations.")
+            }
+            Spacer(minLength: 4)
+            AnimationSpeedSelector(selection: $selection)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+    }
+}
+
+private struct SettingsRowIcon: View {
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(color.gradient)
+                .frame(width: 30, height: 30)
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+private struct AnimationSpeedSelector: View {
+    @Binding var selection: String
+
+    private var selectedSpeed: NotchAnimationSpeed {
+        NotchAnimationSpeed(rawValue: selection) ?? .normal
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(NotchAnimationSpeed.allCases) { speed in
+                let isSelected = selectedSpeed == speed
+                Button {
+                    withAnimation(NotchAnimation.spring(response: 0.2, dampingFraction: 0.8)) {
+                        selection = speed.rawValue
+                    }
+                } label: {
+                    Image(systemName: speed.icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
+                        .frame(width: 36, height: 32)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(Color.accentColor)
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .help(speed.title)
+                .accessibilityLabel("\(speed.title) animation speed")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.07)))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.white.opacity(0.08), lineWidth: 1)
+        }
+    }
+}
+
 struct SettingsView: View {
+    var onGlassPreviewChanged: (Bool) -> Void = { _ in }
+
     @AppStorage(Pref.media) private var media = true
     @AppStorage(Pref.shelf) private var shelf = false
     @AppStorage(Pref.basket) private var basket = false
@@ -265,6 +461,7 @@ struct SettingsView: View {
     @AppStorage(Pref.pausedActivityTimeout) private var pausedActivityTimeout = 5.0
 
     @AppStorage(Pref.volumeHUD) private var volumeHUD = true
+    @AppStorage(Pref.volumeHUDStyle) private var volumeHUDStyle = VolumeHUDStyle.inline.rawValue
     @AppStorage(Pref.brightnessHUD) private var brightnessHUD = true
     @AppStorage(Pref.airpodsHUD) private var airpodsHUD = true
     @AppStorage(Pref.batteryHUD) private var batteryHUD = true
@@ -272,10 +469,16 @@ struct SettingsView: View {
     @AppStorage(Pref.capsLockHUD) private var capsLockHUD = true
 
     @AppStorage(Pref.hoverOpen) private var hoverOpen = true
+    @AppStorage(Pref.expandOnMainDisplay) private var expandOnMainDisplay = true
+    @AppStorage(Pref.expandOnExternalDisplays) private var expandOnExternalDisplays = false
+    @AppStorage(Pref.expandDelay) private var expandDelay = 0.25
+    @AppStorage(Pref.notchAnimationSpeed) private var animationSpeed = NotchAnimationSpeed.normal.rawValue
     @AppStorage(Pref.hapticFeedback) private var haptics = true
     @AppStorage(Pref.islandMode) private var island = false
+    @AppStorage(Pref.glassLevel) private var glassLevel = 0.5
     @AppStorage(Pref.clipboardLimit) private var limit = 50
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var externalDisplaysAvailable = NotchGeometry.hasExternalDisplays
     @State private var selection: SettingsTab = .modules
 
     private var enabledCount: Int {
@@ -303,6 +506,9 @@ struct SettingsView: View {
             .padding(.bottom, 16)
         }
         .frame(width: 560, height: 600)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            externalDisplaysAvailable = NotchGeometry.hasExternalDisplays
+        }
     }
 
     private var modulesTab: some View {
@@ -459,6 +665,17 @@ struct SettingsView: View {
                 SettingsCard(title: "Audio & Display") {
                     SettingRow(icon: "speaker.wave.2.fill", color: .blue, title: "Volume HUD", isOn: $volumeHUD)
                     CardDivider()
+                    HStack(spacing: 12) {
+                        Text("Volume & Brightness")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.86))
+                            .padding(.leading, 42)
+                        Spacer(minLength: 8)
+                        VolumeHUDStyleSelector(selection: $volumeHUDStyle)
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.trailing, 14)
+                    CardDivider()
                     SettingRow(icon: "sun.max.fill", color: .orange, title: "Brightness HUD", isOn: $brightnessHUD)
                     CardDivider()
                     SettingRow(icon: "airpods", color: .teal, title: "AirPods HUD", subtitle: "Bluetooth audio connects", isOn: $airpodsHUD)
@@ -479,8 +696,26 @@ struct SettingsView: View {
     private var generalTab: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
+                DynamicGlassSettingsCard(glassLevel: $glassLevel, onEditingChanged: onGlassPreviewChanged)
+
                 SettingsCard(title: "Notch Behavior") {
-                    SettingRow(icon: "cursor.rays", color: .blue, title: "Open on Hover", isOn: $hoverOpen)
+                    SettingRow(
+                        icon: "cursor.rays",
+                        color: .blue,
+                        title: "Auto-expand",
+                        help: "Open the shelf by hovering over the notch, without clicking it.",
+                        isOn: $hoverOpen
+                    )
+                    CardDivider()
+                    ExpandTargetsRow(
+                        mainMac: $expandOnMainDisplay,
+                        externalDisplays: $expandOnExternalDisplays,
+                        externalDisplaysAvailable: externalDisplaysAvailable
+                    )
+                    CardDivider()
+                    ExpandDelayRow(delay: $expandDelay)
+                    CardDivider()
+                    AnimationSpeedRow(selection: $animationSpeed)
                     CardDivider()
                     SettingRow(icon: "waveform.path", color: .purple, title: "Haptic Feedback", isOn: $haptics)
                     CardDivider()
