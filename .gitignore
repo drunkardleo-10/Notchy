@@ -1,0 +1,6 @@
+.build/
+build/
+.swiftpm/
+.DS_Store
+.remotion/
+AGENTS.md
