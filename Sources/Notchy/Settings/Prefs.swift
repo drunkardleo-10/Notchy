@@ -10,6 +10,7 @@ enum Pref {
     static let clipboardLimit = "clipboardLimit"
     static let islandMode = "forceIslandMode"
     static let liveActivity = "enableLiveActivity"
+    static let pausedActivityTimeout = "pausedActivityTimeout"
     static let browserMedia = "enableBrowserMedia"
     static let lockHUD = "enableLockHUD"
     static let batteryHUD = "enableBatteryHUD"
@@ -33,6 +34,7 @@ enum Pref {
             calendar: false, claude: false, system: false, shortcuts: false, mirror: false,
             hoverOpen: true, hapticFeedback: true, clipboardLimit: 50, islandMode: false,
             liveActivity: true, browserMedia: true,
+            pausedActivityTimeout: 5,
             lockHUD: true, batteryHUD: true, capsLockHUD: true,
             volumeHUD: true, brightnessHUD: true, airpodsHUD: true,
         ])

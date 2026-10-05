@@ -43,6 +43,7 @@ final class MediaController: ObservableObject {
     private var browserBusy = false
     private var artworkURL: String?
     private var artworkTask: URLSessionDataTask?
+    private var requestedMusicArtworkTrack: String?
     private var timers: [Timer] = []
     private let controlQueue = DispatchQueue(label: "com.notchy.mediaControl", qos: .userInitiated)
     private var pendingPlayPauseWorkItem: DispatchWorkItem?
@@ -211,6 +212,7 @@ final class MediaController: ObservableObject {
             activeIsBrowser = false
             title = ""; artist = ""; isPlaying = false; artwork = nil
             hasTrack = false; sourceLabel = ""; artworkURL = nil
+            requestedMusicArtworkTrack = nil
             position = 0; duration = 0; positionDate = Date()
         }
     }
@@ -223,15 +225,20 @@ final class MediaController: ObservableObject {
     private func applyNative(_ n: (app: String, parts: [String])) {
         let p = n.parts
         hasTrack = true
-        sourceLabel = n.app
         let newIsPlaying = p[0] == "playing"
         let newTitle = p[1]
         let newArtist = p[2]
-        let trackChanged = newTitle != title || newArtist != artist
+        let trackChanged = n.app != sourceLabel || newTitle != title || newArtist != artist
 
+        sourceLabel = n.app
         setIfChanged(\.title, newTitle)
         setIfChanged(\.artist, newArtist)
-        loadArtwork(p.count > 3 ? p[3] : "")
+        if n.app == "Music" {
+            loadMusicArtwork(title: newTitle, artist: newArtist)
+        } else {
+            requestedMusicArtworkTrack = nil
+            loadArtwork(p.count > 3 ? p[3] : "")
+        }
 
         let polledPos = Self.number(p, 4)
         duration = n.app == "Spotify" ? Self.number(p, 5) / 1000 : Self.number(p, 5)
@@ -247,11 +254,12 @@ final class MediaController: ObservableObject {
     }
 
     private func applyBrowser(_ b: BrowserTrack) {
-        let trackChanged = b.title != title || b.artist != artist
+        let trackChanged = b.service != sourceLabel || b.title != title || b.artist != artist
         hasTrack = true
         sourceLabel = b.service
         setIfChanged(\.title, b.title)
         setIfChanged(\.artist, b.artist)
+        requestedMusicArtworkTrack = nil
         loadArtwork(b.artworkURL)
         duration = b.duration
         canShuffle = false
@@ -435,6 +443,44 @@ final class MediaController: ObservableObject {
         task.priority = URLSessionTask.highPriority
         artworkTask = task
         task.resume()
+    }
+
+    private func loadMusicArtwork(title: String, artist: String) {
+        let key = "\(title)::\(artist)"
+        guard key != requestedMusicArtworkTrack else { return }
+        requestedMusicArtworkTrack = key
+        artworkTask?.cancel()
+        artworkURL = nil
+        artwork = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let image = Self.queryMusicArtwork().flatMap { NSImage(data: $0) }
+            DispatchQueue.main.async {
+                guard let self,
+                      self.sourceLabel == "Music",
+                      self.requestedMusicArtworkTrack == key,
+                      self.title == title,
+                      self.artist == artist,
+                      let image else { return }
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) {
+                    self.artwork = image
+                }
+            }
+        }
+    }
+
+    nonisolated private static func queryMusicArtwork() -> Data? {
+        let source = """
+        tell application "Music"
+            try
+                return raw data of artwork 1 of current track
+            on error
+                return missing value
+            end try
+        end tell
+        """
+        var error: NSDictionary?
+        return NSAppleScript(source: source)?.executeAndReturnError(&error).data
     }
 
     nonisolated private static func query(_ app: String) -> [String]? {
