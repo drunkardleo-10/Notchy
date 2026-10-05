@@ -51,15 +51,34 @@ struct NotchView: View {
 
     private var hudSize: CGSize? {
         guard !state.expanded, let hud = state.hud else { return nil }
+        if case .volume = hud.kind { return nil }
         return HUDLayout.size(for: hud, notch: state.notchSize)
     }
+    private var volumeHUD: (level: Float, muted: Bool)? {
+        guard !state.expanded, let hud = state.hud,
+              case .volume(let level, let muted) = hud.kind else { return nil }
+        return (level, muted)
+    }
     @AppStorage(Pref.liveActivity) private var liveOn = true
+    @AppStorage(Pref.pausedActivityTimeout) private var pausedActivityTimeout = 5.0
+    @State private var hidePausedActivity = false
+    @State private var pausedActivityWork: DispatchWorkItem?
+
+    private var showMediaActivity: Bool {
+        guard liveOn, Pref.bool(Pref.media), media.hasTrack else { return false }
+        return media.isPlaying || !hidePausedActivity
+    }
 
     private var liveSize: CGSize? {
-        if !state.expanded, state.hud == nil, pomodoro.started {
-            return CGSize(width: state.notchSize.width + HUDLayout.sideWidth * 2, height: state.notchSize.height)
+        guard !state.expanded, state.hud == nil else { return nil }
+        if pomodoro.started {
+            return NotchAccessoryLayout.size(
+                notch: state.notchSize,
+                leadingWidth: HUDLayout.sideWidth,
+                trailingWidth: HUDLayout.sideWidth
+            )
         }
-        guard !state.expanded, state.hud == nil, liveOn, Pref.bool(Pref.media), media.hasTrack else { return nil }
+        guard showMediaActivity else { return nil }
         return LiveActivityLayout.size(notch: state.notchSize)
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
@@ -69,12 +88,20 @@ struct NotchView: View {
 
     private var width: CGFloat { state.expanded ? state.expandedSize.width : collapsedSize.width }
     private var height: CGFloat { state.expanded ? state.expandedSize.height : collapsedSize.height }
+    private var contentHorizontalInset: CGFloat {
+        isCompact ? (state.showQueue ? 28 : 34) : 52
+    }
+    private var expansionAnimation: Animation {
+        state.expanded
+            ? .spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
+            : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)
+    }
 
     private var shape: NotchShape {
         let compact = state.expanded && isCompact
         return NotchShape(
-            topRadius: state.expanded ? (compact ? 24 : 28) : (liveSize != nil || hudSize != nil ? 10 : 8),
-            bottomRadius: state.expanded ? (compact ? 28 : 32) : 14
+            topRadius: state.expanded ? (compact ? 35 : 19) : 6,
+            bottomRadius: state.expanded ? (compact ? 35 : 24) : 14
         )
     }
 
@@ -97,10 +124,8 @@ struct NotchView: View {
 
             Color.black
                 .opacity(state.expanded ? 0 : 1)
-                .animation(.easeOut(duration: state.expanded ? 0.18 : 0.06), value: state.expanded)
         }
-        .frame(width: width, height: height)
-        .clipShape(shape)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
             shape.stroke(
                 LinearGradient(
@@ -115,9 +140,7 @@ struct NotchView: View {
                 lineWidth: 0.8
             )
             .opacity(state.expanded ? 1 : 0)
-            .animation(.easeOut(duration: state.expanded ? 0.2 : 0.05), value: state.expanded)
         }
-        .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
         .overlay(alignment: .bottom) {
             if !state.expanded && !shelf.items.isEmpty && liveSize == nil {
                 Circle().fill(.blue).frame(width: 5, height: 5).offset(y: -3)
@@ -127,48 +150,84 @@ struct NotchView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            notchBackground
+            ZStack(alignment: .top) {
+                notchBackground
 
-            if let size = liveSize {
-                Group {
-                    if pomodoro.started { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
-                    else { LiveActivityView(media: media, notch: state.notchSize, albumArtNamespace: albumArtNamespace) }
+                if let hud = state.hud, let size = hudSize {
+                    HUDView(hud: hud, notch: state.notchSize)
+                        .frame(width: size.width, height: size.height)
+                        .transition(.opacity.animation(expansionAnimation))
                 }
-                .frame(width: size.width, height: size.height)
-                .clipShape(shape)
-                .transition(.opacity.animation(.smooth(duration: 0.2)))
-            }
 
-            if let hud = state.hud, let size = hudSize {
-                HUDView(hud: hud, notch: state.notchSize)
-                    .frame(width: size.width, height: size.height)
-                    .clipShape(shape)
-                    .transition(.opacity.animation(.smooth(duration: 0.2)))
-            }
-
-            if state.expanded {
                 content
-                    .frame(width: state.expandedSize.width, height: state.expandedSize.height, alignment: .top)
+                    .frame(
+                        width: state.expandedSize.width - contentHorizontalInset * 2,
+                        height: state.expandedSize.height,
+                        alignment: .top
+                    )
                     .frame(width: width, height: height, alignment: .top)
-                    .clipShape(shape)
-                    .transition(.notchContent)
+                    .opacity(state.expanded ? 1 : 0)
+                    .blur(radius: state.expanded ? 0 : 20)
+            }
+            .frame(width: width, height: height, alignment: .top)
+            .clipShape(shape)
+            .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
+            .overlay(alignment: .top) {
+                if let volumeHUD {
+                    VolumeHUDView(level: volumeHUD.level, muted: volumeHUD.muted, notch: state.notchSize)
+                        .transition(.opacity.animation(expansionAnimation))
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .top) {
+                if let size = liveSize {
+                    Group {
+                        if pomodoro.started { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
+                        else { LiveActivityView(media: media, notch: state.notchSize, albumArtNamespace: albumArtNamespace) }
+                    }
+                    .frame(width: size.width, height: size.height)
+                    .transition(.opacity.animation(expansionAnimation))
+                    .zIndex(1)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .animation(
-            state.expanded
-                ? .spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
-                : .spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0),
-            value: state.expanded
-        )
+        .animation(expansionAnimation, value: state.expanded)
         .animation(.spring(response: 0.38, dampingFraction: 0.78), value: state.showQueue)
-        .animation(.spring(response: 0.35, dampingFraction: 0.78), value: state.hud?.id)
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: liveSize != nil)
+        .animation(expansionAnimation, value: state.hud?.id)
+        .animation(expansionAnimation, value: liveSize != nil)
+        .onChange(of: media.isPlaying) { _, _ in updatePausedActivityTimer() }
+        .onChange(of: media.hasTrack) { _, _ in updatePausedActivityTimer() }
+        .onChange(of: pausedActivityTimeout) { _, _ in
+            guard !media.isPlaying, media.hasTrack else { return }
+            schedulePausedActivityHide()
+        }
         .onDrop(of: [UTType.fileURL], isTargeted: $state.dropTargeted) { providers in
             guard Pref.bool(Pref.shelf) else { return false }
             state.tab = .shelf
             return shelf.handleDrop(providers)
         }
+        .onAppear {
+            updatePausedActivityTimer()
+        }
+    }
+
+    private func updatePausedActivityTimer() {
+        guard media.hasTrack && !media.isPlaying else {
+            pausedActivityWork?.cancel()
+            pausedActivityWork = nil
+            hidePausedActivity = false
+            return
+        }
+        schedulePausedActivityHide()
+    }
+
+    private func schedulePausedActivityHide() {
+        pausedActivityWork?.cancel()
+        hidePausedActivity = false
+        let work = DispatchWorkItem { hidePausedActivity = true }
+        pausedActivityWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + max(0, pausedActivityTimeout), execute: work)
     }
 
     private var content: some View {
@@ -194,7 +253,6 @@ struct NotchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(nil, value: activeTab)
         }
-        .padding(.horizontal, isCompact ? (state.showQueue ? 28 : 34) : 36)
         .padding(.bottom, isCompact ? 22 : 20)
         .foregroundStyle(.white)
     }
@@ -394,8 +452,9 @@ struct ArtworkView: View {
     let cornerRadius: CGFloat
     var namespace: Namespace.ID? = nil
 
+    @ViewBuilder
     var body: some View {
-        ZStack {
+        let artwork = ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.white.opacity(0.08))
 
@@ -406,24 +465,18 @@ struct ArtworkView: View {
                     .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
 
-                Group {
-                    if let namespace {
-                        img.matchedGeometryEffect(id: "albumArt", in: namespace)
-                    } else {
-                        img
-                    }
-                }
-                .id(image)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity
-                            .combined(with: .scale(scale: 0.90))
-                            .animation(.spring(response: 0.42, dampingFraction: 0.8)),
-                        removal: .opacity
-                            .combined(with: .scale(scale: 1.06))
-                            .animation(.spring(response: 0.38, dampingFraction: 0.85))
+                img
+                    .id(image)
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.90))
+                                .animation(.spring(response: 0.42, dampingFraction: 0.8)),
+                            removal: .opacity
+                                .combined(with: .scale(scale: 1.06))
+                                .animation(.spring(response: 0.38, dampingFraction: 0.85))
+                        )
                     )
-                )
             } else {
                 Image(systemName: "music.note")
                     .font(.system(size: size * 0.3))
@@ -433,7 +486,12 @@ struct ArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-        .animation(.spring(response: 0.42, dampingFraction: 0.8), value: image)
+
+        if let namespace {
+            artwork.matchedGeometryEffect(id: "albumArt", in: namespace)
+        } else {
+            artwork
+        }
     }
 }
 
@@ -626,7 +684,7 @@ struct MediaView: View {
 
             controls
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 16)
     }
 
     private var controls: some View {

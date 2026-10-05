@@ -109,57 +109,27 @@ struct NotchShape: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let w = rect.width, h = rect.height
-        let tx = min(topRadius, w / 4)
-        let ty = min(topRadius * 0.75, h / 2)
-        let b = min(bottomRadius, min(w / 2 - tx, h / 2))
-
         var p = Path()
-        p.move(to: CGPoint(x: 0, y: 0))
+        let left = rect.minX
+        let right = rect.maxX
+        let top = rect.minY
+        let bottom = rect.maxY
+        let topR = min(topRadius, rect.width / 2, rect.height)
+        let bottomR = min(bottomRadius, rect.width / 2, rect.height)
 
-        p.addCurve(
-            to: CGPoint(x: tx, y: ty),
-            control1: CGPoint(x: tx * 0.44, y: 0),
-            control2: CGPoint(x: tx, y: ty * 0.56)
-        )
-
-        p.addLine(to: CGPoint(x: tx, y: h - b))
-
-        p.addCurve(
-            to: CGPoint(x: tx + b, y: h),
-            control1: CGPoint(x: tx, y: h - b * 0.44),
-            control2: CGPoint(x: tx + b * 0.56, y: h)
-        )
-
-        p.addLine(to: CGPoint(x: w - tx - b, y: h))
-
-        p.addCurve(
-            to: CGPoint(x: w - tx, y: h - b),
-            control1: CGPoint(x: w - tx - b * 0.56, y: h),
-            control2: CGPoint(x: w - tx, y: h - b * 0.44)
-        )
-
-        p.addLine(to: CGPoint(x: w - tx, y: ty))
-
-        p.addCurve(
-            to: CGPoint(x: w, y: 0),
-            control1: CGPoint(x: w - tx, y: ty * 0.56),
-            control2: CGPoint(x: w - tx * 0.44, y: 0)
-        )
-
-        p.closeSubpath()
+        p.move(to: CGPoint(x: left, y: top))
+        p.addQuadCurve(to: CGPoint(x: left + topR, y: top + topR),
+                       control: CGPoint(x: left + topR, y: top))
+        p.addLine(to: CGPoint(x: left + topR, y: bottom - bottomR))
+        p.addQuadCurve(to: CGPoint(x: left + topR + bottomR, y: bottom),
+                       control: CGPoint(x: left + topR, y: bottom))
+        p.addLine(to: CGPoint(x: right - topR - bottomR, y: bottom))
+        p.addQuadCurve(to: CGPoint(x: right - topR, y: bottom - bottomR),
+                       control: CGPoint(x: right - topR, y: bottom))
+        p.addLine(to: CGPoint(x: right - topR, y: top + topR))
+        p.addQuadCurve(to: CGPoint(x: right, y: top),
+                       control: CGPoint(x: right - topR, y: top))
+        p.addLine(to: CGPoint(x: left, y: top))
         return p
     }
 }
-
-extension AnyTransition {
-    static var notchContent: AnyTransition {
-        .asymmetric(
-            insertion: .scale(scale: 0.94, anchor: .top)
-                .combined(with: .opacity)
-                .animation(.easeOut(duration: 0.22).delay(0.06)),
-            removal: .opacity.animation(.easeOut(duration: 0.07))
-        )
-    }
-}
-
