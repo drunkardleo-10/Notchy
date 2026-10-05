@@ -152,25 +152,13 @@ struct NotchShape: Shape {
     }
 }
 
-struct BlurModifier: ViewModifier {
-    let blurRadius: CGFloat
-
-    func body(content: Content) -> some View {
-        content.blur(radius: blurRadius)
-    }
-}
-
 extension AnyTransition {
     static var notchContent: AnyTransition {
         .asymmetric(
-            insertion: .scale(scale: 0.8, anchor: .top)
+            insertion: .scale(scale: 0.94, anchor: .top)
                 .combined(with: .opacity)
-                .combined(with: .modifier(
-                    active: BlurModifier(blurRadius: 20),
-                    identity: BlurModifier(blurRadius: 0)
-                ))
-                .animation(.smooth(duration: 0.35)),
-            removal: .opacity.animation(.smooth(duration: 0.2))
+                .animation(.easeOut(duration: 0.22).delay(0.06)),
+            removal: .opacity.animation(.easeOut(duration: 0.07))
         )
     }
 }

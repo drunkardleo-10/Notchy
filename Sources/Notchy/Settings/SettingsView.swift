@@ -84,14 +84,11 @@ struct PillTabBar: View {
                             Capsule()
                                 .fill(Color.white.opacity(0.13))
                                 .matchedGeometryEffect(id: "pill", in: pill)
-                                .overlay {
-                                    Capsule()
-                                        .strokeBorder(.white.opacity(0.14), lineWidth: 1)
-                                }
                         }
                     }
                 }
                 .buttonStyle(.plain)
+                .focusable(false)
             }
         }
         .padding(4)

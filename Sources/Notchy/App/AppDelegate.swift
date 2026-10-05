@@ -192,8 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         withAnimation(.interactiveSpring(response: 0.38, dampingFraction: 0.8, blendDuration: 0)) {
             state.expanded = expanded
         }
-        panel.contentView?.needsDisplay = true
-        panel.displayIfNeeded()
     }
 
 

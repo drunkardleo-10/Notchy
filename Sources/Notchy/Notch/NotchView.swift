@@ -97,6 +97,7 @@ struct NotchView: View {
 
             Color.black
                 .opacity(state.expanded ? 0 : 1)
+                .animation(.easeOut(duration: state.expanded ? 0.18 : 0.06), value: state.expanded)
         }
         .frame(width: width, height: height)
         .clipShape(shape)
@@ -114,6 +115,7 @@ struct NotchView: View {
                 lineWidth: 0.8
             )
             .opacity(state.expanded ? 1 : 0)
+            .animation(.easeOut(duration: state.expanded ? 0.2 : 0.05), value: state.expanded)
         }
         .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
         .overlay(alignment: .bottom) {
@@ -195,7 +197,6 @@ struct NotchView: View {
         .padding(.horizontal, isCompact ? (state.showQueue ? 28 : 34) : 36)
         .padding(.bottom, isCompact ? 22 : 20)
         .foregroundStyle(.white)
-        .blur(radius: state.expanded ? 0 : 20)
     }
 
     private var tabBar: some View {
@@ -236,8 +237,6 @@ struct NotchView: View {
             }
             .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55))
         }
-        .opacity(state.expanded ? 1 : 0)
-        .blur(radius: state.expanded ? 0 : 15)
         .animation(.spring(response: 0.32, dampingFraction: 0.8), value: state.tab)
     }
 }
