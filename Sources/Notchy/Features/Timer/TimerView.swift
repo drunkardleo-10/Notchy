@@ -47,16 +47,21 @@ struct PomodoroPillView: View {
     let notch: CGSize
 
     var body: some View {
-        HStack(spacing: 0) {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: HUDLayout.sideWidth,
+            trailingWidth: HUDLayout.sideWidth,
+            leadingAlignment: .trailing,
+            trailingAlignment: .leading,
+            leadingInset: 4,
+            trailingInset: 6
+        ) {
             Image(systemName: pomodoro.phase.icon).font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(pomodoro.phase == .focus ? Color.orange : .green)
-                .frame(width: HUDLayout.sideWidth, alignment: .trailing).padding(.trailing, 4)
-            Spacer().frame(width: notch.width)
+        } trailing: {
             Text(pomodoro.formatted)
                 .font(.system(size: 12, weight: .semibold).monospacedDigit())
                 .foregroundStyle(.white.opacity(pomodoro.running ? 1 : 0.5))
-                .frame(width: HUDLayout.sideWidth, alignment: .leading).padding(.leading, 6)
         }
-        .frame(height: notch.height)
     }
 }

@@ -5,12 +5,57 @@ enum HUDLayout {
     static let tallExtraHeight: CGFloat = 46
 
     static func size(for hud: HUDEvent, notch: CGSize) -> CGSize {
+        if case .volume = hud.kind {
+            return NotchAccessoryLayout.size(notch: notch, leadingWidth: 0, trailingWidth: 0)
+        }
         var h = notch.height
         switch hud.kind {
         case .airpods, .battery, .message: h += tallExtraHeight
         default: break
         }
-        return CGSize(width: notch.width + sideWidth * 2, height: h)
+        return CGSize(
+            width: NotchAccessoryLayout.size(notch: notch, leadingWidth: sideWidth, trailingWidth: sideWidth).width,
+            height: h
+        )
+    }
+}
+
+/// A transient indicator laid out around the notch without changing the notch's shape or size.
+struct VolumeHUDView: View {
+    let level: Float
+    let muted: Bool
+    let notch: CGSize
+
+    var body: some View {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: HUDLayout.sideWidth,
+            trailingWidth: HUDLayout.sideWidth,
+            leadingAlignment: .trailing,
+            trailingAlignment: .leading,
+            leadingInset: 4,
+            trailingInset: 6
+        ) {
+            Image(systemName: Self.icon(level, muted))
+                .font(.system(size: 13, weight: .semibold))
+        } trailing: {
+            HStack(spacing: 6) {
+                Capsule().fill(.white.opacity(0.25)).frame(width: 40, height: 4)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(.white)
+                            .frame(width: 40 * CGFloat(min(max(muted ? 0 : level, 0), 1)), height: 4)
+                    }
+                Text("\(Int(((muted ? 0 : level) * 100).rounded()))")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+            }
+        }
+        .foregroundStyle(.white)
+        .animation(.easeOut(duration: 0.12), value: level)
+    }
+
+    private static func icon(_ level: Float, _ muted: Bool) -> String {
+        if muted || level == 0 { return "speaker.slash.fill" }
+        return level < 0.33 ? "speaker.wave.1.fill" : level < 0.66 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
     }
 }
 
@@ -21,8 +66,8 @@ struct HUDView: View {
     var body: some View {
         VStack(spacing: 0) {
             switch hud.kind {
-            case .volume(let level, let muted):
-                levelRow(icon: Self.volumeIcon(level, muted), level: muted ? 0 : level)
+            case .volume:
+                EmptyView()
             case .brightness(let level):
                 levelRow(icon: level > 0.5 ? "sun.max.fill" : "sun.min.fill", level: level)
             case .airpods(let name, let battery):
@@ -71,7 +116,8 @@ struct HUDView: View {
     private func levelRow(icon: String, level: Float) -> some View {
         HStack(spacing: 0) {
             Image(systemName: icon).font(.system(size: 13, weight: .semibold))
-                .frame(width: HUDLayout.sideWidth, alignment: .trailing).padding(.trailing, 4)
+                .padding(.trailing, 4)
+                .frame(width: HUDLayout.sideWidth, alignment: .trailing)
             Spacer().frame(width: notch.width)
             HStack(spacing: 6) {
                 Capsule().fill(.white.opacity(0.25)).frame(width: 40, height: 4)
@@ -80,15 +126,11 @@ struct HUDView: View {
                     }
                 Text("\(Int((level * 100).rounded()))").font(.system(size: 11, weight: .medium).monospacedDigit())
             }
-            .frame(width: HUDLayout.sideWidth, alignment: .leading).padding(.leading, 6)
+            .padding(.leading, 6)
+            .frame(width: HUDLayout.sideWidth, alignment: .leading)
         }
         .frame(height: notch.height)
         .animation(.easeOut(duration: 0.12), value: level)
-    }
-
-    private static func volumeIcon(_ level: Float, _ muted: Bool) -> String {
-        if muted || level == 0 { return "speaker.slash.fill" }
-        return level < 0.33 ? "speaker.wave.1.fill" : level < 0.66 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
     }
 
     private static func airpodsIcon(_ name: String) -> String {

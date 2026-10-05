@@ -4,7 +4,7 @@ enum LiveActivityLayout {
     static let sideWidth: CGFloat = 46
 
     static func size(notch: CGSize) -> CGSize {
-        CGSize(width: notch.width + sideWidth * 2, height: notch.height)
+        NotchAccessoryLayout.size(notch: notch, leadingWidth: sideWidth, trailingWidth: sideWidth)
     }
 }
 
@@ -16,16 +16,15 @@ struct LiveActivityView: View {
     private var side: CGFloat { LiveActivityLayout.sideWidth }
 
     var body: some View {
-        HStack(spacing: 0) {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: side,
+            trailingWidth: side
+        ) {
             ArtworkView(image: media.artwork, size: 20, cornerRadius: 5, namespace: albumArtNamespace)
-                .frame(width: side, alignment: .center)
-
-            Spacer().frame(width: notch.width)
-
+        } trailing: {
             EqualizerBars(active: media.isPlaying)
-                .frame(width: side, alignment: .center)
         }
-        .frame(height: notch.height)
         .foregroundStyle(.white)
     }
 }
