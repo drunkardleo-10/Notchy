@@ -568,7 +568,6 @@ struct MediaView: View {
     @ObservedObject var media: MediaController
     @ObservedObject var state: NotchState
     var albumArtNamespace: Namespace.ID? = nil
-    @State private var favorite = false
 
     var body: some View {
         if !media.hasTrack {
@@ -648,11 +647,11 @@ struct MediaView: View {
                         .fill(Color.white.opacity(0.18))
                         .frame(width: 1, height: 14)
 
-                    Button { favorite.toggle() } label: {
-                        Image(systemName: favorite ? "star.fill" : "star")
+                    Button { media.toggleLike() } label: {
+                        Image(systemName: media.isFavorite ? "star.fill" : "star")
                             .contentTransition(.symbolEffect)
                             .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(favorite ? .yellow : .white)
+                            .foregroundStyle(media.isFavorite ? .yellow : .white)
                     }
                     .buttonStyle(MediaControlButtonStyle())
                 }

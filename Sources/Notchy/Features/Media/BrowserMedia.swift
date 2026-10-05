@@ -13,15 +13,17 @@ struct BrowserTrack: Equatable {
     var position: Double = 0
     var duration: Double = 0
     var loop = false
+    var isFavorite = false
 }
 
 enum BrowserAction {
-    case playPause, play, pause, next, previous, toggleLoop
+    case playPause, play, pause, next, previous, toggleLoop, toggleLike
     case seek(Double)
 
     var js: String {
         switch self {
         case .toggleLoop: "var v=document.querySelector('video,audio');if(v){v.loop=!v.loop}"
+        case .toggleLike: "var ytl=document.querySelector('ytmusic-like-button-renderer #button-shape-like button');if(ytl){ytl.click()}else{var ytb=document.querySelector('like-button-view-model button,#segmented-like-button button');if(ytb){ytb.click()}else{var sc=document.querySelector('.playControls__like,.playbackSoundBadge__like');if(sc){sc.click()}else{var sp=document.querySelector('button[data-testid=\"add-button\"],button[aria-label=\"Save to Your Library\"],button[aria-label=\"Remove from Your Library\"]');if(sp){sp.click()}}}}"
         case .seek(let t): "var v=document.querySelector('video,audio');if(v){v.currentTime=\(t)}"
         case .playPause: "var b=document.querySelector('.ytp-play-button,.play-pause-button,.playControls__play,button[data-testid=\"control-button-playpause\"]');if(b){b.click()}else{var v=document.querySelector('video,audio');if(v){v.paused?v.play():v.pause()}}"
         case .play: "var v=document.querySelector('video,audio');if(v&&v.paused){v.play()}else{var b=document.querySelector('.ytp-play-button,.play-pause-button,.playControls__play,button[data-testid=\"control-button-playpause\"]');if(b)b.click()}"
@@ -51,7 +53,7 @@ enum BrowserMedia {
     private static let urlCondition = ["youtube.com/watch", "music.youtube.com", "youtube.com/shorts", "soundcloud.com", "open.spotify.com"]
         .map { "(u contains \"\($0)\")" }.joined(separator: " or ")
 
-    private static let probeJS = "(function(){var v=document.querySelector('video,audio');var ms=navigator.mediaSession;var p=ms&&ms.playbackState==='playing'?true:(ms&&ms.playbackState==='paused'?false:(v?!v.paused:false));var m=ms&&ms.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}return JSON.stringify({p:p,t:m?m.title:'',a:m?m.artist:'',i:a,c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false})})()"
+    private static let probeJS = "(function(){var v=document.querySelector('video,audio');var ms=navigator.mediaSession;var p=ms&&ms.playbackState==='playing'?true:(ms&&ms.playbackState==='paused'?false:(v?!v.paused:false));var m=ms&&ms.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}var fav=false;var ytl=document.querySelector('ytmusic-like-button-renderer');if(ytl){fav=ytl.getAttribute('like-status')==='LIKE'}if(!fav){var ytb=document.querySelector('like-button-view-model button,#segmented-like-button button');if(ytb){fav=ytb.getAttribute('aria-pressed')==='true'}}if(!fav){var sc=document.querySelector('.playControls__like,.playbackSoundBadge__like');if(sc){fav=sc.classList.contains('sc-button-selected')||sc.getAttribute('aria-label')==='Unlike'||sc.title==='Unlike'}}if(!fav){var sp=document.querySelector('button[data-testid=\"add-button\"],button[aria-label=\"Save to Your Library\"],button[aria-label=\"Remove from Your Library\"]');if(sp){fav=sp.getAttribute('aria-checked')==='true'||sp.getAttribute('aria-label')==='Remove from Your Library'}}return JSON.stringify({p:p,t:m?m.title:'',a:m?m.artist:'',i:a,c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false,f:fav})})()"
 
     static func bundleID(forApp name: String) -> String? { browsers.first { $0.name == name }?.bundleID }
 
@@ -178,7 +180,8 @@ enum BrowserMedia {
                             playing: jsWorked ? (meta["p"] as? Bool ?? false) : audioPlaying,
                             artworkURL: artwork, service: service, preciseState: jsWorked,
                             position: (meta["c"] as? Double) ?? 0, duration: (meta["d"] as? Double) ?? 0,
-                            loop: (meta["l"] as? Bool) ?? false)
+                            loop: (meta["l"] as? Bool) ?? false,
+                            isFavorite: (meta["f"] as? Bool) ?? false)
     }
 
     private nonisolated static func serviceName(for url: String) -> String {

@@ -26,6 +26,71 @@ final class MediaController: ObservableObject {
     @Published var canShuffle = false
     @Published var queueTracks: [QueueTrack] = []
     @Published var queueSupported = false
+    @Published var isFavorite = false
+
+    private var likedSpotifyTracks: Set<String> = {
+        let list = UserDefaults.standard.stringArray(forKey: "notchy.likedTracks") ?? []
+        return Set(list)
+    }()
+
+    private func saveLikedTracks() {
+        UserDefaults.standard.set(Array(likedSpotifyTracks), forKey: "notchy.likedTracks")
+    }
+
+    private var spotifyLikedTracks: Set<String> = []
+    private var lastSpotifyLikedScan: Date = .distantPast
+
+    private func reloadSpotifyLikedTracks(force: Bool = false) {
+        guard force || Date().timeIntervalSince(lastSpotifyLikedScan) > 15.0 else { return }
+        lastSpotifyLikedScan = Date()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let tracks = Self.scanSpotifyLikedTracks()
+            guard !tracks.isEmpty else { return }
+            DispatchQueue.main.async {
+                self?.spotifyLikedTracks.formUnion(tracks)
+                self?.recompute()
+            }
+        }
+    }
+
+    nonisolated private static func scanSpotifyLikedTracks() -> Set<String> {
+        let fileManager = FileManager.default
+        let home = fileManager.homeDirectoryForCurrentUser
+        let baseDir = home.appendingPathComponent("Library/Application Support/Spotify/PersistentCache/Users")
+        guard let userDirs = try? fileManager.contentsOfDirectory(at: baseDir, includingPropertiesForKeys: nil) else { return [] }
+        var result = Set<String>()
+        guard let target = "Liked Songs".data(using: .utf8),
+              let trackPrefix = "track:".data(using: .utf8) else { return [] }
+
+        for userDir in userDirs {
+            let ldbDir = userDir.appendingPathComponent("primary.ldb")
+            guard let files = try? fileManager.contentsOfDirectory(at: ldbDir, includingPropertiesForKeys: nil) else { continue }
+            for file in files where file.pathExtension == "ldb" || file.pathExtension == "log" {
+                guard let data = try? Data(contentsOf: file, options: .mappedIfSafe) else { continue }
+                var searchRange = 0..<data.count
+                while let found = data.range(of: target, options: [], in: searchRange) {
+                    let chunkEnd = min(data.count, found.upperBound + 30000)
+                    let chunk = data.subdata(in: found.upperBound..<chunkEnd)
+                    var trackSearch = 0..<chunk.count
+                    while let tFound = chunk.range(of: trackPrefix, options: [], in: trackSearch) {
+                        let idStart = tFound.upperBound
+                        let idEnd = idStart + 22
+                        if idEnd <= chunk.count {
+                            let idData = chunk.subdata(in: idStart..<idEnd)
+                            if let idStr = String(data: idData, encoding: .ascii),
+                               idStr.count == 22,
+                               idStr.allSatisfy({ $0.isLetter || $0.isNumber }) {
+                                result.insert(idStr)
+                            }
+                        }
+                        trackSearch = tFound.upperBound..<chunk.count
+                    }
+                    searchRange = found.upperBound..<data.count
+                }
+            }
+        }
+        return result
+    }
 
     private var lastFetchedTrack = ""
 
@@ -120,11 +185,14 @@ final class MediaController: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshNative() }
         }
+
+        reloadSpotifyLikedTracks(force: true)
     }
 
 
     private func refreshNative() {
         guard Pref.bool(Pref.media) else { return }
+        reloadSpotifyLikedTracks()
         if nativeBusy {
             nativePending = true
             return
@@ -212,6 +280,7 @@ final class MediaController: ObservableObject {
             title = ""; artist = ""; isPlaying = false; artwork = nil
             hasTrack = false; sourceLabel = ""; artworkURL = nil
             position = 0; duration = 0; positionDate = Date()
+            isFavorite = false
         }
     }
 
@@ -239,6 +308,17 @@ final class MediaController: ObservableObject {
         shuffleOn = p.count > 6 && p[6] == "true"
         repeatOn = p.count > 7 && p[7] != "false" && p[7] != "off"
 
+        if n.app == "Spotify" {
+            let rawID = p.count > 8 ? p[8] : ""
+            let cleanID = rawID.replacingOccurrences(of: "spotify:track:", with: "")
+            let isLiked = (!cleanID.isEmpty && (spotifyLikedTracks.contains(cleanID) || likedSpotifyTracks.contains(cleanID)))
+                || (!rawID.isEmpty && likedSpotifyTracks.contains(rawID))
+                || likedSpotifyTracks.contains("\(newTitle)::\(newArtist)")
+            isFavorite = isLiked
+        } else if n.app == "Music" {
+            isFavorite = p.count > 8 && p[8] == "true"
+        }
+
         if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
             fetchUpcomingQueue(title: newTitle, artist: newArtist, app: n.app)
         }
@@ -257,6 +337,7 @@ final class MediaController: ObservableObject {
         canShuffle = false
         shuffleOn = false
         repeatOn = b.loop
+        isFavorite = b.isFavorite
 
         if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
             fetchUpcomingQueue(title: b.title, artist: b.artist, app: b.service)
@@ -443,14 +524,22 @@ final class MediaController: ObservableObject {
             source = """
             tell application "Spotify"
                 if player state is stopped then return "stopped||||"
-                return (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||" & (artwork url of current track) & "||" & (player position as string) & "||" & ((duration of current track) as string) & "||" & (shuffling as string) & "||" & (repeating as string)
+                return (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||" & (artwork url of current track) & "||" & (player position as string) & "||" & ((duration of current track) as string) & "||" & (shuffling as string) & "||" & (repeating as string) & "||" & (id of current track as string)
             end tell
             """
         } else {
             source = """
             tell application "Music"
                 if player state is stopped then return "stopped||||"
-                return (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||" & "" & "||" & (player position as string) & "||" & ((duration of current track) as string) & "||" & (shuffle enabled as string) & "||" & (song repeat as string)
+                set isFav to "false"
+                try
+                    set isFav to (favorited of current track as string)
+                on error
+                    try
+                        set isFav to (loved of current track as string)
+                    end try
+                end try
+                return (player state as string) & "||" & (name of current track) & "||" & (artist of current track) & "||" & "" & "||" & (player position as string) & "||" & ((duration of current track) as string) & "||" & (shuffle enabled as string) & "||" & (song repeat as string) & "||" & isFav
             end tell
             """
         }
@@ -634,6 +723,60 @@ final class MediaController: ObservableObject {
             app == "Spotify" ? "tell application \"Spotify\" to set repeating to not repeating"
                              : "tell application \"Music\"\nif song repeat is off then\nset song repeat to all\nelse\nset song repeat to off\nend if\nend tell"
         }, browser: .toggleLoop)
+    }
+
+    func toggleLike() {
+        isFavorite.toggle()
+        let targetFav = isFavorite
+        if activeIsBrowser, var b = browserTrack {
+            b.isFavorite = targetFav
+            browserTrack = b
+            controlQueue.async {
+                BrowserMedia.command(.toggleLike, on: b)
+            }
+        } else if let n = native {
+            if n.app == "Spotify" {
+                let rawID = n.parts.count > 8 ? n.parts[8] : ""
+                let cleanID = rawID.replacingOccurrences(of: "spotify:track:", with: "")
+                if targetFav {
+                    if !cleanID.isEmpty {
+                        spotifyLikedTracks.insert(cleanID)
+                        likedSpotifyTracks.insert(cleanID)
+                    }
+                    likedSpotifyTracks.insert("\(title)::\(artist)")
+                } else {
+                    if !cleanID.isEmpty {
+                        spotifyLikedTracks.remove(cleanID)
+                        likedSpotifyTracks.remove(cleanID)
+                    }
+                    likedSpotifyTracks.remove("\(title)::\(artist)")
+                }
+                saveLikedTracks()
+                controlQueue.async {
+                    var error: NSDictionary?
+                    NSAppleScript(source: "tell application \"System Events\" to tell process \"Spotify\" to key code 11 using {option down, shift down}")?
+                        .executeAndReturnError(&error)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                    self?.reloadSpotifyLikedTracks(force: true)
+                }
+            } else if n.app == "Music" {
+                controlQueue.async {
+                    var error: NSDictionary?
+                    NSAppleScript(source: """
+                    tell application "Music"
+                        try
+                            set favorited of current track to not (favorited of current track)
+                        on error
+                            try
+                                set loved of current track to not (loved of current track)
+                            end try
+                        end try
+                    end tell
+                    """)?.executeAndReturnError(&error)
+                }
+            }
+        }
     }
 
     func openApp() {
