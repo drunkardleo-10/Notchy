@@ -2,6 +2,59 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
+private struct AccessoryTransitionModifier: ViewModifier {
+    let blur: CGFloat
+    let opacity: Double
+    let scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content.blur(radius: blur).opacity(opacity).scaleEffect(scale)
+    }
+}
+
+private extension AnyTransition {
+    static var accessoryBlur: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: AccessoryTransitionModifier(blur: 7, opacity: 0, scale: 1),
+                identity: AccessoryTransitionModifier(blur: 0, opacity: 1, scale: 1)
+            ),
+            removal: .modifier(
+                active: AccessoryTransitionModifier(blur: 7, opacity: 0, scale: 1),
+                identity: AccessoryTransitionModifier(blur: 0, opacity: 1, scale: 1)
+            )
+        )
+    }
+}
+
+private struct NotchBackgroundGradient: View, Animatable {
+    var progress: Double
+
+    var animatableData: Double {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        LinearGradient(
+            stops: [
+                stop(1, at: 0.0),
+                stop(1, at: 0.30),
+                stop(0.40, at: 0.52),
+                stop(0.10, at: 0.70),
+                stop(0, at: 0.86)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private func stop(_ openOpacity: Double, at location: Double) -> Gradient.Stop {
+        let opacity = 1 + (openOpacity - 1) * progress
+        return .init(color: .black.opacity(opacity), location: location)
+    }
+}
+
 struct VisualEffectBackground: NSViewRepresentable {
     var material: NSVisualEffectView.Material = .popover
     var blendingMode: NSVisualEffectView.BlendingMode = .behindWindow
@@ -108,23 +161,18 @@ struct NotchView: View {
 
     private var notchBackground: some View {
         ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
+            if #available(macOS 26.0, *) {
+                // Keep the native glass mounted through both notch states so the
+                // background doesn't pop or overshoot while the panel animates.
+                Color.clear
+                    .glassEffect(.clear, in: shape)
+            } else {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+            }
 
-            LinearGradient(
-                stops: [
-                    .init(color: .black, location: 0.0),
-                    .init(color: .black, location: 0.22),
-                    .init(color: .black.opacity(0.40), location: 0.42),
-                    .init(color: .black.opacity(0.10), location: 0.60),
-                    .init(color: .clear, location: 0.75)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-
-            Color.black
-                .opacity(state.expanded ? 0 : 1)
+            NotchBackgroundGradient(progress: state.expanded ? 1 : 0)
+                .animation(expansionAnimation, value: state.expanded)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -155,9 +203,15 @@ struct NotchView: View {
                 notchBackground
 
                 if let hud = state.hud, let size = hudSize {
-                    HUDView(hud: hud, notch: state.notchSize)
-                        .frame(width: size.width, height: size.height)
-                        .transition(.opacity.animation(expansionAnimation))
+                    Group {
+                        if case .volume(let level, let muted) = hud.kind {
+                            VolumeHUDView(level: level, muted: muted, notch: state.notchSize)
+                        } else {
+                            HUDView(hud: hud, notch: state.notchSize)
+                        }
+                    }
+                    .frame(width: size.width, height: size.height)
+                    .transition(.accessoryBlur.animation(expansionAnimation))
                 }
 
                 content
@@ -169,28 +223,29 @@ struct NotchView: View {
                     .frame(width: width, height: height, alignment: .top)
                     .opacity(state.expanded ? 1 : 0)
                     .blur(radius: state.expanded ? 0 : 20)
-            }
-            .frame(width: width, height: height, alignment: .top)
-            .clipShape(shape)
-            .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
-            .overlay(alignment: .top) {
-                if let volumeHUD {
-                    VolumeHUDView(level: volumeHUD.level, muted: volumeHUD.muted, notch: state.notchSize)
-                        .transition(.opacity.animation(expansionAnimation))
-                        .allowsHitTesting(false)
-                }
-            }
-            .overlay(alignment: .top) {
+
                 if let size = liveSize {
                     Group {
                         if pomodoro.started { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
-                        else { LiveActivityView(media: media, notch: state.notchSize, albumArtNamespace: albumArtNamespace) }
+                        else {
+                            LiveActivityView(
+                                media: media,
+                                notch: state.notchSize,
+                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil
+                            )
+                        }
                     }
                     .frame(width: size.width, height: size.height)
+                    .blur(radius: state.hud == nil ? 0 : 7)
+                    .opacity(state.hud == nil ? 1 : 0)
                     .transition(.opacity.animation(expansionAnimation))
                     .zIndex(1)
                 }
             }
+            .frame(width: width, height: height, alignment: .top)
+            .clipShape(shape)
+            .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
+            .offset(x: collapsedHorizontalOffset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(expansionAnimation, value: state.expanded)
@@ -660,7 +715,12 @@ struct MediaView: View {
     private var playerSection: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                ArtworkView(image: media.artwork, size: 52, cornerRadius: 13, namespace: albumArtNamespace)
+                ArtworkView(
+                    image: media.artwork,
+                    size: 52,
+                    cornerRadius: 13,
+                    namespace: state.expanded ? albumArtNamespace : nil
+                )
                     .overlay {
                         RoundedRectangle(cornerRadius: 13)
                             .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
