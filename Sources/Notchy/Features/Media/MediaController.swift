@@ -16,7 +16,10 @@ final class MediaController: ObservableObject {
     @Published var title = ""
     @Published var artist = ""
     @Published var isPlaying = false
-    @Published var artwork: NSImage?
+    @Published var artwork: NSImage? {
+        didSet { artworkTint = artwork.map(Self.sampleArtworkColor) ?? Color(white: 0.82) }
+    }
+    @Published private(set) var artworkTint = Color(white: 0.82)
     @Published var hasTrack = false
     @Published var sourceLabel = ""
     @Published var position: Double = 0
@@ -125,7 +128,10 @@ final class MediaController: ObservableObject {
 
 
     private func refreshNative() {
-        guard Pref.bool(Pref.media) else { return }
+        guard Pref.bool(Pref.media) else {
+            AudioVisualizer.shared.follow(bundleIdentifiers: [], isPlaying: false)
+            return
+        }
         if nativeBusy {
             nativePending = true
             return
@@ -169,7 +175,11 @@ final class MediaController: ObservableObject {
     }
 
     private func refreshBrowser() {
-        guard Pref.bool(Pref.media), Pref.bool(Pref.browserMedia), !browserBusy else {
+        guard Pref.bool(Pref.media) else {
+            AudioVisualizer.shared.follow(bundleIdentifiers: [], isPlaying: false)
+            return
+        }
+        guard Pref.bool(Pref.browserMedia), !browserBusy else {
             if browserTrack != nil, !Pref.bool(Pref.browserMedia) { browserTrack = nil; recompute() }
             return
         }
@@ -210,6 +220,7 @@ final class MediaController: ObservableObject {
             applyBrowser(b)
         } else {
             activeIsBrowser = false
+            AudioVisualizer.shared.follow(bundleIdentifiers: [], isPlaying: false)
             title = ""; artist = ""; isPlaying = false; artwork = nil
             hasTrack = false; sourceLabel = ""; artworkURL = nil
             requestedMusicArtworkTrack = nil
@@ -229,6 +240,8 @@ final class MediaController: ObservableObject {
         let newTitle = p[1]
         let newArtist = p[2]
         let trackChanged = n.app != sourceLabel || newTitle != title || newArtist != artist
+        let bundleID = n.app == "Spotify" ? "com.spotify.client" : "com.apple.Music"
+        AudioVisualizer.shared.follow(bundleIdentifiers: [bundleID], isPlaying: newIsPlaying)
 
         sourceLabel = n.app
         setIfChanged(\.title, newTitle)
@@ -255,6 +268,10 @@ final class MediaController: ObservableObject {
 
     private func applyBrowser(_ b: BrowserTrack) {
         let trackChanged = b.service != sourceLabel || b.title != title || b.artist != artist
+        AudioVisualizer.shared.follow(
+            bundleIdentifiers: BrowserMedia.bundleID(forApp: b.app).map { [$0] } ?? [],
+            isPlaying: b.playing
+        )
         hasTrack = true
         sourceLabel = b.service
         setIfChanged(\.title, b.title)
@@ -387,6 +404,88 @@ final class MediaController: ObservableObject {
 
     private func setIfChanged(_ keyPath: ReferenceWritableKeyPath<MediaController, String>, _ value: String) {
         if self[keyPath: keyPath] != value { self[keyPath: keyPath] = value }
+    }
+
+    private static func sampleArtworkColor(_ image: NSImage) -> Color {
+        var proposedRect = CGRect(origin: .zero, size: image.size)
+        guard let image = image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil),
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return Color(white: 0.82)
+        }
+
+        let width = 24
+        let height = 24
+        let bytesPerRow = width * 4
+        let bitmapInfo = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+        var pixelBuffer = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let pixels = pixelBuffer.withUnsafeMutableBytes { bytes -> [UInt8]? in
+            guard let context = CGContext(
+                data: bytes.baseAddress,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) else {
+                return nil
+            }
+            context.interpolationQuality = .medium
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return Array(bytes.bindMemory(to: UInt8.self))
+        }
+        guard let pixels else { return Color(white: 0.82) }
+
+        var bucketWeights = [Double](repeating: 0, count: 4096)
+        var bucketRed = [Double](repeating: 0, count: 4096)
+        var bucketGreen = [Double](repeating: 0, count: 4096)
+        var bucketBlue = [Double](repeating: 0, count: 4096)
+        var totalRed = 0.0
+        var totalGreen = 0.0
+        var totalBlue = 0.0
+        var totalWeight = 0.0
+
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = Double(pixels[offset + 3]) / 255
+            guard alpha > 0.15 else { continue }
+            let red = min(1, Double(pixels[offset]) / 255 / alpha)
+            let green = min(1, Double(pixels[offset + 1]) / 255 / alpha)
+            let blue = min(1, Double(pixels[offset + 2]) / 255 / alpha)
+            let brightness = (red + green + blue) / 3
+            let saturation = max(red, green, blue) - min(red, green, blue)
+            totalRed += red * alpha
+            totalGreen += green * alpha
+            totalBlue += blue * alpha
+            totalWeight += alpha
+
+            let hueWeight = alpha * saturation * max(0.12, 1 - abs(brightness - 0.52))
+            guard hueWeight > 0.015 else { continue }
+            let bucket = (Int(red * 15) << 8) | (Int(green * 15) << 4) | Int(blue * 15)
+            bucketWeights[bucket] += hueWeight
+            bucketRed[bucket] += red * hueWeight
+            bucketGreen[bucket] += green * hueWeight
+            bucketBlue[bucket] += blue * hueWeight
+        }
+
+        if let bucket = bucketWeights.indices.max(by: { bucketWeights[$0] < bucketWeights[$1] }),
+           bucketWeights[bucket] > 0.02 {
+            let weight = bucketWeights[bucket]
+            return visibleArtworkColor(red: bucketRed[bucket] / weight,
+                                       green: bucketGreen[bucket] / weight,
+                                       blue: bucketBlue[bucket] / weight)
+        }
+        guard totalWeight > 0 else { return Color(white: 0.82) }
+        return visibleArtworkColor(red: totalRed / totalWeight,
+                                   green: totalGreen / totalWeight,
+                                   blue: totalBlue / totalWeight)
+    }
+
+    private static func visibleArtworkColor(red: Double, green: Double, blue: Double) -> Color {
+        let peak = max(red, green, blue)
+        guard peak > 0.02 else { return Color(white: 0.82) }
+        let scale = peak < 0.5 ? 0.5 / max(peak, 0.01) : 1
+        return Color(.sRGB, red: min(1, red * scale), green: min(1, green * scale),
+                     blue: min(1, blue * scale), opacity: 1)
     }
 
     private static func normalizeArtworkURL(_ raw: String) -> String {

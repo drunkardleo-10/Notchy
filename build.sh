@@ -32,6 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSCalendarsUsageDescription</key><string>notchy shows your upcoming events and meeting links in the notch.</string>
   <key>NSCameraUsageDescription</key><string>notchy can show a quick camera mirror in the notch.</string>
   <key>NSBluetoothAlwaysUsageDescription</key><string>notchy shows a HUD when AirPods and other Bluetooth audio devices connect.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>notchy analyzes audio from the current media app to draw a real-time visualizer. Audio is processed locally and never leaves your Mac.</string>
   <key>NSAppleEventsUsageDescription</key><string>notchy reads the current track from Music and Spotify and controls playback.</string>
 </dict></plist>
 PLIST

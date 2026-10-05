@@ -12,6 +12,7 @@ struct LiveActivityView: View {
     @ObservedObject var media: MediaController
     let notch: CGSize
     var albumArtNamespace: Namespace.ID? = nil
+    var visualizerNamespace: Namespace.ID? = nil
 
     private var side: CGFloat { LiveActivityLayout.sideWidth }
 
@@ -23,7 +24,11 @@ struct LiveActivityView: View {
         ) {
             ArtworkView(image: media.artwork, size: 20, cornerRadius: 5, namespace: albumArtNamespace)
         } trailing: {
-            EqualizerBars(active: media.isPlaying)
+            EqualizerBars(
+                active: media.isPlaying,
+                tint: media.artworkTint,
+                namespace: visualizerNamespace
+            )
         }
         .foregroundStyle(.white)
     }
@@ -32,40 +37,46 @@ struct LiveActivityView: View {
 struct EqualizerBars: View {
     let active: Bool
     var useGradient: Bool = false
+    var tint: Color = Color(white: 0.82)
+    var namespace: Namespace.ID? = nil
+    @ObservedObject private var visualizer = AudioVisualizer.shared
 
     var body: some View {
-        barsView
-            .animation(.smooth(duration: 0.25), value: active)
+        Group {
+            if let namespace {
+                barsView.matchedGeometryEffect(id: "mediaVisualizer", in: namespace)
+            } else {
+                barsView
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: active)
+        .animation(.linear(duration: 0.07), value: visualizer.levels)
+        .animation(.easeInOut(duration: 0.25), value: tint)
     }
 
     @ViewBuilder
     private var barsView: some View {
-        if active {
-            TimelineView(.animation(minimumInterval: 1 / 24)) { context in
-                bars(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            bars(t: 0)
-        }
+        bars
     }
 
-    private func bars(t: Double) -> some View {
-        let count = useGradient ? 5 : 4
-        return HStack(alignment: .center, spacing: useGradient ? 2.6 : 2.2) {
+    private var bars: some View {
+        let count = AudioVisualizer.barCount
+        let minimumHeight: CGFloat = useGradient ? 3.5 : 2
+        let dynamicHeight: CGFloat = useGradient ? 22 : 13
+        return HStack(alignment: .center, spacing: useGradient ? 2.6 : 1.5) {
             ForEach(0..<count, id: \.self) { i in
+                let level = min(1, sqrt(CGFloat(visualizer.levels[i])) * 1.2)
                 Capsule()
-                    .fill(Color.white.opacity(0.9))
+                    .fill(tint)
                     .frame(
-                        width: useGradient ? 3.0 : 2.5,
+                        width: useGradient ? 3.0 : 1.8,
                         height: active
-                            ? (useGradient
-                                ? (5 + 14 * abs(sin(t * (1.6 + Double(i) * 0.45) + Double(i))))
-                                : (4 + 11 * abs(sin(t * (1.4 + Double(i) * 0.35) + Double(i)))))
-                            : 4
+                            ? minimumHeight + level * dynamicHeight
+                            : (useGradient ? 4 : 2)
                     )
             }
         }
-        .frame(height: useGradient ? 20 : 16)
+        .frame(height: useGradient ? 22 : 11)
     }
 }
 
