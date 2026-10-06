@@ -110,6 +110,10 @@ enum NotchAnimation {
         spring(response: 0.10, dampingFraction: 0.80)
     }
 
+    static var hoverScale: Animation {
+        spring(response: 0.12, dampingFraction: 0.80)
+    }
+
     static var press: Animation {
         spring(response: 0.14, dampingFraction: 0.82)
     }

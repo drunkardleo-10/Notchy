@@ -83,6 +83,31 @@ final class NotchState: ObservableObject {
     @Published var dropTargeted = false
     @Published var hud: HUDEvent?
     @Published var notchSize = CGSize(width: 190, height: 32)
+    @Published var swipeOffset: CGFloat = 0
+    @Published var activeSwipeDirection: NotchSwipeDirection?
+    @Published var flashDirection: NotchSwipeDirection?
+    private var flashWork: DispatchWorkItem?
+
+    func flashSwipe(_ direction: NotchSwipeDirection) {
+        flashWork?.cancel()
+        flashDirection = direction
+        withAnimation(.spring(response: 0.22, dampingFraction: 0.60)) {
+            swipeOffset = direction == .previous ? -14 : 14
+        }
+        let work = DispatchWorkItem { [weak self] in
+            withAnimation(NotchAnimation.pressSettle) {
+                self?.flashDirection = nil
+                self?.swipeOffset = 0
+            }
+        }
+        flashWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+}
+
+enum NotchSwipeDirection {
+    case previous
+    case next
 }
 
 enum NotchGeometry {

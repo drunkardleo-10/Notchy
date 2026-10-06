@@ -28,6 +28,11 @@ final class PomodoroModel: ObservableObject {
     }
 
     var formatted: String { String(format: "%02d:%02d", remaining / 60, remaining % 60) }
+    var totalSeconds: Int { seconds(for: phase) }
+    var progress: Double {
+        guard totalSeconds > 0 else { return 0 }
+        return max(0, min(1, 1 - Double(remaining) / Double(totalSeconds)))
+    }
     private func seconds(for phase: Phase) -> Int { (phase == .focus ? focusMinutes : breakMinutes) * 60 }
 
     private func persist() {

@@ -13,6 +13,7 @@ struct LiveActivityView: View {
     let notch: CGSize
     var albumArtNamespace: Namespace.ID? = nil
     var visualizerNamespace: Namespace.ID? = nil
+    @ObservedObject var state: NotchState
 
     private var side: CGFloat { LiveActivityLayout.sideWidth }
 
@@ -24,13 +25,31 @@ struct LiveActivityView: View {
         ) {
             ArtworkView(image: media.artwork, size: 20, cornerRadius: 5, namespace: albumArtNamespace)
         } trailing: {
-            EqualizerBars(
-                active: media.isPlaying,
-                tint: media.artworkTint,
-                namespace: visualizerNamespace
-            )
+            ZStack {
+                if state.flashDirection == .previous {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .transition(.scale.combined(with: .opacity))
+                } else if state.flashDirection == .next {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                        .transition(.scale.combined(with: .opacity))
+                } else {
+                    EqualizerBars(
+                        active: media.isPlaying,
+                        tint: media.artworkTint,
+                        namespace: visualizerNamespace
+                    )
+                        .transition(.opacity)
+                }
+            }
+            .animation(.spring(response: 0.24, dampingFraction: 0.72), value: state.flashDirection)
         }
         .foregroundStyle(.white)
+        .offset(x: state.swipeOffset * 0.35)
+        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
     }
 }
 
