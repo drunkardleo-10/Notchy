@@ -64,17 +64,23 @@ final class NotchState: ObservableObject {
                 queueClosedAt = Date()
                 onQueueClosed?()
             }
+            if showQueue && showLyrics {
+                showLyrics = false
+            }
+        }
+    }
+    @Published var showLyrics = false {
+        didSet {
+            if showLyrics && showQueue {
+                showQueue = false
+            }
         }
     }
     var queueClosedAt: Date = .distantPast
     var onQueueClosed: (() -> Void)?
 
     var expandedSize: CGSize {
-        let active = NotchTab.allCases.filter { UserDefaults.standard.bool(forKey: $0.prefKey) }
-        if active.count <= 1 && (active.first == .media || active.isEmpty) {
-            return showQueue ? Self.queueExpandedSize : Self.compactExpandedSize
-        }
-        return Self.fullExpandedSize
+        (showQueue || showLyrics) ? Self.queueExpandedSize : Self.compactExpandedSize
     }
 
     @Published var expanded = false

@@ -123,13 +123,13 @@ struct NotchView: View {
         )
     }
     private var isCompact: Bool {
-        tabs.count <= 1 && (activeTab == .media)
+        !(state.showQueue || state.showLyrics)
     }
 
     private var width: CGFloat { state.expanded ? state.expandedSize.width : collapsedSize.width }
     private var height: CGFloat { state.expanded ? state.expandedSize.height : collapsedSize.height }
     private var contentHorizontalInset: CGFloat {
-        isCompact ? (state.showQueue ? 28 : 34) : 52
+        (state.showQueue || state.showLyrics) ? 24 : 26
     }
     private var expansionAnimation: Animation {
         state.expanded
@@ -247,6 +247,7 @@ struct NotchView: View {
         .animation(expansionAnimation, value: state.expanded)
         .animation(expansionAnimation, value: animationSpeedRawValue)
         .animation(NotchAnimation.state, value: state.showQueue)
+        .animation(NotchAnimation.state, value: state.showLyrics)
         .animation(expansionAnimation, value: state.hud?.id)
         .animation(expansionAnimation, value: volumeHUDStyleRawValue)
         .animation(expansionAnimation, value: liveSize != nil)
@@ -689,12 +690,160 @@ struct QueueTrackRow: View {
     }
 }
 
+struct LiveLyricsView: View {
+    @ObservedObject var lyrics: LyricsService
+    @ObservedObject var media: MediaController
+    @ObservedObject var state: NotchState
+    @State private var hoveredLineId: Int?
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 0.12, paused: !media.isPlaying)) { context in
+            lyricsBody(position: media.currentPosition(at: context.date))
+        }
+    }
+
+    private func lyricsBody(position: Double) -> some View {
+        let activeIdx = lyrics.activeIndex(for: position)
+        return ZStack(alignment: .topTrailing) {
+            if lyrics.isFetching {
+                VStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading lyrics…")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if lyrics.lines.isEmpty {
+                VStack(spacing: 6) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white.opacity(0.35))
+                    Text("No lyrics available")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 14) {
+                            ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { index, line in
+                                let dist = index - activeIdx
+                                let isHovered = hoveredLineId == index
+
+                                let opacity: Double = {
+                                    if isHovered { return 1.0 }
+                                    if dist == 0 { return 1.0 }
+                                    if dist < 0 { return 0.16 }
+                                    switch dist {
+                                    case 1: return 0.58
+                                    case 2: return 0.40
+                                    case 3: return 0.26
+                                    case 4: return 0.16
+                                    default: return 0.10
+                                    }
+                                }()
+
+                                let blurRadius: CGFloat = {
+                                    if isHovered { return 0 }
+                                    if dist == 0 { return 0 }
+                                    if dist < 0 { return 3.5 }
+                                    switch dist {
+                                    case 1: return 1.5
+                                    case 2: return 3.0
+                                    case 3: return 4.5
+                                    case 4: return 6.0
+                                    default: return 8.0
+                                    }
+                                }()
+
+                                let scale: CGFloat = {
+                                    if dist == 0 { return 1.0 }
+                                    if dist < 0 { return 0.96 }
+                                    if dist == 1 { return 0.985 }
+                                    return 0.97
+                                }()
+
+                                let fontSize: CGFloat = dist == 0 ? 18.5 : (dist == 1 ? 15 : 14)
+                                let fontWeight: Font.Weight = dist == 0 ? .bold : (dist == 1 ? .semibold : .medium)
+
+                                Button {
+                                    if line.time > 0 {
+                                        media.seek(to: line.time)
+                                    }
+                                } label: {
+                                    Text(line.text)
+                                        .font(.system(size: fontSize, weight: fontWeight))
+                                        .tracking(-0.35)
+                                        .foregroundStyle(Color.white.opacity(opacity))
+                                        .scaleEffect(scale, anchor: .center)
+                                        .blur(radius: blurRadius)
+                                        .shadow(color: dist == 0 ? .black.opacity(0.55) : .clear, radius: 8, y: 2)
+                                        .multilineTextAlignment(.center)
+                                        .lineLimit(3)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .onHover { hovering in
+                                    hoveredLineId = hovering ? index : nil
+                                }
+                                .id(index)
+                            }
+                        }
+                        .padding(.vertical, 50)
+                        .padding(.horizontal, 10)
+                        .animation(.timingCurve(0.22, 1.0, 0.36, 1.0, duration: 0.65), value: activeIdx)
+                    }
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: .black, location: 0.18),
+                                .init(color: .black, location: 0.82),
+                                .init(color: .clear, location: 1.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .onChange(of: activeIdx) { _, newIdx in
+                        withAnimation(.timingCurve(0.22, 1.0, 0.36, 1.0, duration: 0.72)) {
+                            proxy.scrollTo(newIdx, anchor: .center)
+                        }
+                    }
+                    .onAppear {
+                        proxy.scrollTo(activeIdx, anchor: .center)
+                    }
+                }
+            }
+
+            Button {
+                withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
+                    state.showLyrics = false
+                }
+            } label: {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(width: 22, height: 22)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 2)
+            .padding(.top, 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 struct MediaView: View {
     @ObservedObject var media: MediaController
     @ObservedObject var state: NotchState
     var albumArtNamespace: Namespace.ID? = nil
     var visualizerNamespace: Namespace.ID? = nil
     @State private var favorite = false
+    @State private var hoveringLyrics = false
 
     var body: some View {
         if !media.hasTrack {
@@ -702,7 +851,7 @@ struct MediaView: View {
         } else {
             HStack(spacing: 0) {
                 playerSection
-                    .frame(width: state.showQueue ? 412 : nil)
+                    .frame(width: (state.showQueue || state.showLyrics) ? 412 : nil)
 
                 if state.showQueue {
                     Rectangle()
@@ -715,9 +864,20 @@ struct MediaView: View {
                     PlayingNextView(media: media)
                         .padding(.trailing, 24)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
+                } else if state.showLyrics {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(width: 1)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 16)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+
+                    LiveLyricsView(lyrics: media.lyrics, media: media, state: state)
+                        .padding(.trailing, 24)
+                        .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
-            .animation(NotchAnimation.state, value: state.showQueue)
+            .animation(NotchAnimation.state, value: state.showQueue || state.showLyrics)
         }
     }
 
@@ -736,9 +896,34 @@ struct MediaView: View {
                     }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(media.title)
-                        .font(.system(size: 16, weight: .semibold))
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(media.title)
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+
+                        if media.lyrics.hasLyrics || media.lyrics.isFetching {
+                            Button {
+                                withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
+                                    state.showLyrics.toggle()
+                                }
+                            } label: {
+                                Text("L")
+                                    .font(.system(size: 9.5, weight: .heavy, design: .rounded))
+                                    .foregroundStyle(Color.black)
+                                    .frame(width: 17, height: 17)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4.5)
+                                            .fill(Color.white)
+                                    )
+                                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                            .scaleEffect(hoveringLyrics ? 1.06 : 1.0)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: hoveringLyrics)
+                            .onHover { hoveringLyrics = $0 }
+                        }
+                    }
+
                     Text(media.artist.isEmpty ? media.sourceLabel : media.artist)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.65))

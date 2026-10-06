@@ -206,6 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if interactive { panel.makeKey() }
         } else {
             state.showQueue = false
+            state.showLyrics = false
             panel.ignoresMouseEvents = true
             if interactive { panel.resignKey() }
         }

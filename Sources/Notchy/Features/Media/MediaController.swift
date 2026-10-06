@@ -29,6 +29,7 @@ final class MediaController: ObservableObject {
     @Published var canShuffle = false
     @Published var queueTracks: [QueueTrack] = []
     @Published var queueSupported = false
+    @Published var lyrics = LyricsService()
 
     private var lastFetchedTrack = ""
 
@@ -225,6 +226,7 @@ final class MediaController: ObservableObject {
             hasTrack = false; sourceLabel = ""; artworkURL = nil
             requestedMusicArtworkTrack = nil
             position = 0; duration = 0; positionDate = Date()
+            lyrics.clear()
         }
     }
 
@@ -261,6 +263,7 @@ final class MediaController: ObservableObject {
 
         if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
             fetchUpcomingQueue(title: newTitle, artist: newArtist, app: n.app)
+            lyrics.update(title: newTitle, artist: newArtist, isAppleMusic: n.app == "Music")
         }
 
         updatePosition(polled: polledPos, isPlaying: newIsPlaying, trackChanged: trackChanged)
@@ -285,6 +288,7 @@ final class MediaController: ObservableObject {
 
         if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
             fetchUpcomingQueue(title: b.title, artist: b.artist, app: b.service)
+            lyrics.update(title: b.title, artist: b.artist, isAppleMusic: false)
         }
 
         updatePosition(polled: b.position, isPlaying: b.playing, trackChanged: trackChanged)
