@@ -10,7 +10,6 @@ enum NotchAccessoryLayout {
     }
 }
 
-/// Lays out content on either side of the notch and reports the matching total size.
 struct NotchAccessory<Leading: View, Trailing: View>: View {
     let notch: CGSize
     let leadingWidth: CGFloat

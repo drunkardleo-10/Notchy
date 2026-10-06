@@ -197,7 +197,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panelDisplayIDs[panelID] = displayID
         movingPanel = true
-        // Hide it during the handoff so it never travels visibly across the desktop.
         panel.alphaValue = 0
         panel.setFrameOrigin(NSPoint(x: destination.minX, y: f.maxY))
         panel.alphaValue = 1

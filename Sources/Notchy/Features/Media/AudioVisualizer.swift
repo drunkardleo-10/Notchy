@@ -1,5 +1,3 @@
-// The process-tap and FFT approach follows boring.notch's AudioCaptureManager
-// and MusicVisualizer, adapted here for Notchy's media sources and compact bars.
 import Accelerate
 import AppKit
 import AudioToolbox

@@ -149,7 +149,6 @@ struct PeekHUDView<Content: View>: View {
     }
 }
 
-/// A transient volume indicator with inline and peek notch styles.
 struct VolumeHUDView: View {
     let level: Float
     let muted: Bool
