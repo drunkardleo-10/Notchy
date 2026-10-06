@@ -6,8 +6,8 @@ enum Pref {
     static let clipboard = "enableClipboard"
     static let media = "enableMedia"
     static let hoverOpen = "hoverToOpen"
-    static let expandOnMainDisplay = "expandOnMainDisplay"
-    static let expandOnExternalDisplays = "expandOnExternalDisplays"
+    static let notchDisplayMode = "notchDisplayMode"
+    static let externalDisplayID = "notchyExternalDisplayID"
     static let expandDelay = "expandDelay"
     static let notchAnimationSpeed = "notchAnimationSpeed"
     static let hapticFeedback = "hapticFeedback"
@@ -38,7 +38,7 @@ enum Pref {
             shelf: false, basket: false, clipboard: false,
             timer: false, tools: false,
             calendar: false, claude: false, system: false, shortcuts: false, mirror: false,
-            hoverOpen: true, expandOnMainDisplay: true, expandOnExternalDisplays: false,
+            hoverOpen: true, notchDisplayMode: NotchDisplayMode.main.rawValue,
             expandDelay: 0.25, notchAnimationSpeed: NotchAnimationSpeed.normal.rawValue,
             hapticFeedback: true, clipboardLimit: 50, islandMode: false,
             liveActivity: true, browserMedia: true,

@@ -17,8 +17,21 @@ final class NotchSpaceManager {
 }
 
 @MainActor
+private final class NotchDisplayInstance {
+    let displayID: String
+    let state: NotchState
+    let panel: NotchPanel
+
+    init(displayID: String, state: NotchState, panel: NotchPanel) {
+        self.displayID = displayID
+        self.state = state
+        self.panel = panel
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let state = NotchState()
+    private let primaryState = NotchState()
     let shelf = ShelfStore()
     let clipboard = ClipboardManager()
     let media = MediaController()
@@ -30,13 +43,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let shortcuts = ShortcutsModel()
 
     private var hudMonitor: HUDMonitor?
-    private var panel: NotchPanel!
+    private var primaryPanel: NotchPanel!
+    private var primaryDisplayID: String?
+    private var activeDisplayID: String?
+    private var additionalDisplays: [String: NotchDisplayInstance] = [:]
+    private var allDisplayCollapseWork: [String: DispatchWorkItem] = [:]
+    private var state: NotchState {
+        additionalDisplays[activeDisplayID ?? ""]?.state ?? primaryState
+    }
+    private var panel: NotchPanel! {
+        additionalDisplays[activeDisplayID ?? ""]?.panel ?? primaryPanel
+    }
     private var basket: BasketController!
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var monitors: [Any] = []
     private var expandWork: DispatchWorkItem?
     private var collapseWork: DispatchWorkItem?
+    private var movingPanel = false
+    private var panelDisplayIDs: [ObjectIdentifier: String] = [:]
+    private var pendingExpandDisplayID: String?
     private var glassPreviewWasExpanded: Bool?
 
     private var dragBaseline = 0
@@ -54,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpPanel()
         setUpStatusItem()
         setUpMonitors()
-        hudMonitor = HUDMonitor(state: state)
+        hudMonitor = HUDMonitor(states: { [weak self] in self?.allNotchStates ?? [] })
         pomodoro.onFinish = { [weak self] phase in
             NSSound(named: "Glass")?.play()
             self?.hudMonitor?.showMessage(icon: phase == .focus ? "checkmark.circle.fill" : "cup.and.saucer.fill",
@@ -78,13 +104,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
                                                object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.positionPanel() }
+            MainActor.assumeIsolated { self?.configureDisplayMode() }
         }
-        state.onQueueClosed = { [weak self] in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.evaluateHover()
-            }
+        NotificationCenter.default.addObserver(forName: .notchDisplayConfigurationDidChange,
+                                               object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.configureDisplayMode() }
         }
+        installCallbacks(on: primaryState, displayID: primaryDisplayID)
         let notifications: [(String, () -> Void)] = [
             ("com.notchy.playPause", { [weak self] in self?.media.playPause() }),
             ("com.notchy.toggle", { [weak self] in self?.toggleNotch() }),
@@ -101,11 +127,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 
+    private var allNotchStates: [NotchState] {
+        [primaryState] + additionalDisplays.values.map(\.state)
+    }
+
     private func setUpPanel() {
+        let screen = NotchGeometry.mainDisplay
+        primaryDisplayID = NotchGeometry.screenID(screen)
+        activeDisplayID = primaryDisplayID
+        primaryState.notchSize = NotchGeometry.notchSize(for: screen)
+        primaryPanel = makePanel(state: primaryState, on: screen)
+        panelDisplayIDs[ObjectIdentifier(primaryPanel)] = primaryDisplayID
+        configureDisplayMode()
+    }
+
+    private func makePanel(state: NotchState, on screen: NSScreen) -> NotchPanel {
         let pad = NotchState.panelPadding
         let size = CGSize(width: NotchState.fullExpandedSize.width + pad * 2, height: NotchState.fullExpandedSize.height + pad)
-        panel = NotchPanel(contentRect: NSRect(origin: .zero, size: size),
-                           styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
+        let panel = NotchPanel(contentRect: NSRect(origin: .zero, size: size),
+                               styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -123,23 +163,126 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.layer?.backgroundColor = NSColor.clear.cgColor
         host.sizingOptions = []
         panel.contentView = host
-        positionPanel()
+        position(panel, state: state, on: screen)
         panel.orderFrontRegardless()
         NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+        return panel
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let panel {
-            NotchSpaceManager.shared.notchSpace.windows.remove(panel)
+        for instance in additionalDisplays.values {
+            NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
+        }
+        if let primaryPanel { NotchSpaceManager.shared.notchSpace.windows.remove(primaryPanel) }
+    }
+
+    private func positionPanel(on target: NSScreen? = nil, animated: Bool = false) {
+        guard let screen = target ?? NotchGeometry.targetScreen(), let panel else { return }
+        position(panel, state: state, on: screen, animated: animated)
+    }
+
+    private func position(_ panel: NotchPanel, state targetState: NotchState, on screen: NSScreen, animated: Bool = false) {
+        targetState.notchSize = NotchGeometry.notchSize(for: screen)
+        let f = screen.frame
+        let displayID = NotchGeometry.screenID(screen)
+        let destination = NSRect(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height,
+                                 width: panel.frame.width, height: panel.frame.height)
+        let panelID = ObjectIdentifier(panel)
+        guard animated, panel.isVisible, !targetState.expanded, displayID != panelDisplayIDs[panelID] else {
+            panelDisplayIDs[panelID] = displayID
+            panel.setFrame(destination, display: true)
+            return
+        }
+        guard !movingPanel else { return }
+
+        panelDisplayIDs[panelID] = displayID
+        movingPanel = true
+        // Hide it during the handoff so it never travels visibly across the desktop.
+        panel.alphaValue = 0
+        panel.setFrameOrigin(NSPoint(x: destination.minX, y: f.maxY))
+        panel.alphaValue = 1
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.32
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(destination, display: true)
+        }, completionHandler: { [weak self] in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.movingPanel = false
+                self.evaluateHover()
+            }
+        })
+    }
+
+    private func configureDisplayMode() {
+        cancelPendingExpansion()
+        let mode = NotchDisplayMode.current
+        let main = NotchGeometry.mainDisplay
+        let mainID = NotchGeometry.screenID(main)
+        let target: NSScreen
+        switch mode {
+        case .main, .all:
+            target = main
+        case .external:
+            target = NotchGeometry.screen(id: UserDefaults.standard.string(forKey: Pref.externalDisplayID))
+                ?? NotchGeometry.externalDisplays.first
+                ?? main
+        case .followPointer:
+            target = NotchGeometry.screen(containing: NSEvent.mouseLocation) ?? main
+        }
+
+        let targetID = NotchGeometry.screenID(target)
+        if mode == .all {
+            var wanted: [String: NSScreen] = [:]
+            for screen in NSScreen.screens {
+                guard let id = NotchGeometry.screenID(screen), id != mainID else { continue }
+                wanted[id] = screen
+            }
+            let removedIDs = additionalDisplays.keys.filter { wanted[$0] == nil }
+            for id in removedIDs {
+                guard let instance = additionalDisplays[id] else { continue }
+                cancelCollapseWork(for: id)
+                NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
+                instance.panel.orderOut(nil)
+                additionalDisplays.removeValue(forKey: id)
+                panelDisplayIDs.removeValue(forKey: ObjectIdentifier(instance.panel))
+            }
+            for (id, screen) in wanted where additionalDisplays[id] == nil {
+                let state = NotchState()
+                state.notchSize = NotchGeometry.notchSize(for: screen)
+                let panel = makePanel(state: state, on: screen)
+                panelDisplayIDs[ObjectIdentifier(panel)] = id
+                additionalDisplays[id] = NotchDisplayInstance(displayID: id, state: state, panel: panel)
+                installCallbacks(on: state, displayID: id)
+            }
+        } else {
+            for instance in additionalDisplays.values {
+                cancelCollapseWork(for: instance.displayID)
+                NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
+                instance.panel.orderOut(nil)
+                panelDisplayIDs.removeValue(forKey: ObjectIdentifier(instance.panel))
+            }
+            additionalDisplays.removeAll()
+        }
+
+        primaryDisplayID = targetID
+        if mode == .all { primaryDisplayID = mainID }
+        activeDisplayID = primaryDisplayID
+        positionPanel(on: target)
+        primaryPanel?.orderFrontRegardless()
+        if mode == .all {
+            for instance in additionalDisplays.values { instance.panel.orderFrontRegardless() }
         }
     }
 
-    private func positionPanel(on target: NSScreen? = nil) {
-        guard let screen = target ?? NotchGeometry.targetScreen() else { return }
-        state.notchSize = NotchGeometry.notchSize(for: screen)
-        let f = screen.frame
-        panel.setFrame(NSRect(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height,
-                              width: panel.frame.width, height: panel.frame.height), display: true)
+    private func installCallbacks(on state: NotchState, displayID: String?) {
+        state.onQueueClosed = { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                guard let self else { return }
+                if let displayID { self.activeDisplayID = displayID }
+                self.evaluateHover()
+            }
+        }
     }
 
 
@@ -155,25 +298,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
-    @objc private func toggleNotch() { setExpanded(!state.expanded) }
+    @objc private func toggleNotch() {
+        activeDisplayID = primaryDisplayID
+        setExpanded(!primaryState.expanded, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
+    }
 
     private func setGlassPreview(_ active: Bool) {
         if active {
             guard glassPreviewWasExpanded == nil else { return }
-            glassPreviewWasExpanded = state.expanded
-            if !state.expanded { setExpanded(true, interactive: false) }
+            glassPreviewWasExpanded = primaryState.expanded
+            if !primaryState.expanded { setExpanded(true, interactive: false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID) }
         } else {
             guard let wasExpanded = glassPreviewWasExpanded else { return }
             glassPreviewWasExpanded = nil
-            if !wasExpanded { setExpanded(false, interactive: false) }
+            if !wasExpanded { setExpanded(false, interactive: false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID) }
         }
     }
 
     @objc func openSettings() {
         if settingsWindow == nil {
-            let settings = SettingsView { [weak self] editing in
+            let settings = SettingsView(onGlassPreviewChanged: { [weak self] editing in
                 self?.setGlassPreview(editing)
-            }
+            }, onDisplayConfigurationChanged: { [weak self] in
+                self?.configureDisplayMode()
+            })
             let w = NSWindow(contentViewController: NSHostingController(rootView: settings))
             w.title = "notchy Settings"
             w.styleMask = [.titled, .closable]
@@ -187,31 +335,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
 
-    private func setExpanded(_ expanded: Bool, interactive: Bool = true, openingHaptic: Bool = true) {
-        guard state.expanded != expanded else { return }
-        expandWork?.cancel()
-        collapseWork?.cancel()
-        collapseWork = nil
+    private func setExpanded(
+        _ expanded: Bool,
+        interactive: Bool = true,
+        openingHaptic: Bool = true,
+        state targetState: NotchState? = nil,
+        panel targetPanel: NotchPanel? = nil,
+        displayID targetDisplayID: String? = nil
+    ) {
+        let targetState = targetState ?? state
+        let targetPanel: NotchPanel = targetPanel ?? self.panel!
+        let targetDisplayID = targetDisplayID ?? activeDisplayID ?? "primary"
+        guard targetState.expanded != expanded else { return }
+        if expanded || pendingExpandDisplayID == targetDisplayID {
+            cancelPendingExpansion()
+        }
+        allDisplayCollapseWork[targetDisplayID]?.cancel()
+        allDisplayCollapseWork[targetDisplayID] = nil
         if expanded {
-            if let first = NotchTab.allCases.first(where: { Pref.bool($0.prefKey) }), !Pref.bool(state.tab.prefKey) {
-                state.tab = first
+            if let first = NotchTab.allCases.first(where: { Pref.bool($0.prefKey) }), !Pref.bool(targetState.tab.prefKey) {
+                targetState.tab = first
             }
-            if Pref.bool(Pref.media), !draggingContent { state.tab = .media }
+            if Pref.bool(Pref.media), !draggingContent { targetState.tab = .media }
             if interactive && openingHaptic && Pref.bool(Pref.hapticFeedback) {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
-            state.hoveringNotch = false
-            state.hud = nil
-            panel.ignoresMouseEvents = !interactive
-            if interactive { panel.makeKey() }
+            targetState.hoveringNotch = false
+            targetState.hud = nil
+            targetPanel.ignoresMouseEvents = !interactive
+            if interactive { targetPanel.makeKey() }
         } else {
-            state.showQueue = false
-            state.showLyrics = false
-            panel.ignoresMouseEvents = true
-            if interactive { panel.resignKey() }
+            targetState.showQueue = false
+            targetState.showLyrics = false
+            targetPanel.ignoresMouseEvents = true
+            if interactive { targetPanel.resignKey() }
         }
-        state.expanded = expanded
-        if !expanded { positionPanel() }
+        if expanded {
+            targetState.expanded = true
+        } else {
+            withAnimation(NotchAnimation.notchClose(for: targetPanel.screen), completionCriteria: .logicallyComplete) {
+                targetState.expanded = false
+            } completion: { [weak self] in
+                guard let self else { return }
+                self.evaluateHover()
+            }
+        }
     }
 
 
@@ -274,39 +442,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let loc = NSEvent.mouseLocation
+        guard let pointerScreen = NotchGeometry.screen(containing: loc) ?? NotchGeometry.targetScreen() else { return }
+        let mode = NotchDisplayMode.current
+        let screen: NSScreen
+
+        switch mode {
+        case .main:
+            activeDisplayID = primaryDisplayID
+            screen = NotchGeometry.mainDisplay
+            guard NotchGeometry.screenID(pointerScreen) == NotchGeometry.screenID(screen) || state.expanded else {
+                updateHoveringNotch(false)
+                cancelPendingExpansion()
+                return
+            }
+        case .external:
+            activeDisplayID = primaryDisplayID
+            screen = NotchGeometry.targetScreen() ?? NotchGeometry.mainDisplay
+            guard NotchGeometry.screenID(pointerScreen) == NotchGeometry.screenID(screen) || state.expanded else {
+                updateHoveringNotch(false)
+                cancelPendingExpansion()
+                return
+            }
+        case .followPointer:
+            activeDisplayID = primaryDisplayID
+            screen = pointerScreen
+            if !state.expanded { positionPanel(on: screen, animated: true) }
+        case .all:
+            screen = pointerScreen
+            guard let id = NotchGeometry.screenID(screen) else { return }
+            activeDisplayID = id
+        }
+
+        let hoveredDisplayID = activeDisplayID ?? "primary"
+        if expandWork != nil, pendingExpandDisplayID != hoveredDisplayID {
+            cancelPendingExpansion()
+        }
+
+        if mode == .all {
+            for (id, instance) in displayInstances where id != activeDisplayID {
+                instance.state.hoveringNotch = false
+            }
+            for (id, instance) in displayInstances where instance.state.expanded {
+                if pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
+                    cancelCollapseWork(for: id)
+                } else {
+                    scheduleCollapse(for: instance)
+                }
+            }
+        }
 
         if state.expanded {
-            guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return }
-            let f = screen.frame
-            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
-            var s = state.expandedSize
-            if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
-                s.width = max(s.width, NotchState.queueExpandedSize.width)
-            }
-            let inside = loc.x >= f.midX - s.width / 2 - 14 && loc.x <= f.midX + s.width / 2 + 14
-                && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
-            if !inside {
+            let id = activeDisplayID ?? "primary"
+            if pointerIsInsideExpandedNotch(loc, state: state, panel: panel) {
+                collapseWork?.cancel()
+                collapseWork = nil
+                cancelCollapseWork(for: id)
+            } else if mode != .all {
                 guard collapseWork == nil else { return }
+                let targetState = state
+                let targetPanel = panel
                 let work = DispatchWorkItem { [weak self] in
                     self?.collapseWork = nil
-                    self?.setExpanded(false)
+                    self?.setExpanded(false, state: targetState, panel: targetPanel, displayID: id)
                 }
                 collapseWork = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-            } else {
-                collapseWork?.cancel()
-                collapseWork = nil
             }
             return
         }
 
-        guard let screen = NotchGeometry.screen(containing: loc)
-                ?? panel.screen
-                ?? NotchGeometry.targetScreen() else {
-            updateHoveringNotch(false)
-            expandWork?.cancel(); expandWork = nil
-            return
-        }
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
@@ -317,18 +521,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let canOpenOnHover = Pref.bool(Pref.hoverOpen) || draggingContent
         updateHoveringNotch(hot && allowedDisplay && canOpenOnHover)
         guard hot, allowedDisplay, canOpenOnHover else {
-            expandWork?.cancel(); expandWork = nil
+            cancelPendingExpansion()
             return
         }
+        let baseDelay = draggingContent ? 0.05 : Pref.double(Pref.expandDelay)
+        let delay = baseDelay + (movingPanel ? 0.32 : 0)
+        let targetState = state
+        let targetPanel = panel
+        let targetID = activeDisplayID ?? "primary"
         guard expandWork == nil else { return }
-        positionPanel(on: screen)
-        let delay = draggingContent ? 0.05 : Pref.double(Pref.expandDelay)
         let work = DispatchWorkItem { [weak self] in
             self?.expandWork = nil
-            self?.setExpanded(true, openingHaptic: delay >= 0.25)
+            self?.pendingExpandDisplayID = nil
+            self?.setExpanded(
+                true,
+                openingHaptic: baseDelay >= 0.25,
+                state: targetState,
+                panel: targetPanel,
+                displayID: targetID
+            )
         }
         expandWork = work
+        pendingExpandDisplayID = targetID
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func cancelPendingExpansion() {
+        expandWork?.cancel()
+        expandWork = nil
+        pendingExpandDisplayID = nil
+    }
+
+    private var displayInstances: [String: NotchDisplayInstance] {
+        var result: [String: NotchDisplayInstance] = [:]
+        if let primaryDisplayID {
+            result[primaryDisplayID] = NotchDisplayInstance(displayID: primaryDisplayID, state: primaryState, panel: primaryPanel)
+        }
+        result.merge(additionalDisplays) { _, replica in replica }
+        return result
+    }
+
+    private func pointerIsInsideExpandedNotch(_ point: NSPoint, state: NotchState, panel: NotchPanel) -> Bool {
+        guard let screen = panel.screen else { return false }
+        let frame = screen.frame
+        var size = state.expandedSize
+        if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
+            size.width = max(size.width, NotchState.queueExpandedSize.width)
+        }
+        return point.x >= frame.midX - size.width / 2 - 14 && point.x <= frame.midX + size.width / 2 + 14
+            && point.y >= frame.maxY - size.height - 14 && point.y <= frame.maxY + 4
+    }
+
+    private func scheduleCollapse(for instance: NotchDisplayInstance) {
+        let id = instance.displayID
+        guard allDisplayCollapseWork[id] == nil else { return }
+        let work = DispatchWorkItem { [weak self, weak state = instance.state, weak panel = instance.panel] in
+            guard let self, let state, let panel else { return }
+            self.allDisplayCollapseWork[id] = nil
+            self.setExpanded(false, state: state, panel: panel, displayID: id)
+        }
+        allDisplayCollapseWork[id] = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func cancelCollapseWork(for id: String) {
+        allDisplayCollapseWork[id]?.cancel()
+        allDisplayCollapseWork[id] = nil
+    }
+
+    private func cancelAllCollapseWork() {
+        allDisplayCollapseWork.values.forEach { $0.cancel() }
+        allDisplayCollapseWork.removeAll()
     }
 
     private func updateHoveringNotch(_ hovering: Bool) {
@@ -361,6 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @discardableResult
     private func handleScrollWheel(_ event: NSEvent) -> Bool {
         guard Pref.bool(Pref.media) else { return false }
+        selectDisplayForPointer()
         guard media.hasTrack || state.tab == .media else { return false }
         if state.expanded && state.tab != .media { return false }
 
@@ -396,8 +660,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
-        expandWork?.cancel()
-        expandWork = nil
+        cancelPendingExpansion()
 
         let physicalDx = event.isDirectionInvertedFromDevice ? rawDx : -rawDx
         swipeAccumulator += physicalDx
@@ -444,6 +707,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return true
+    }
+
+    private func selectDisplayForPointer() {
+        let mode = NotchDisplayMode.current
+        switch mode {
+        case .main, .external:
+            activeDisplayID = primaryDisplayID
+        case .all:
+            if let screen = NotchGeometry.screen(containing: NSEvent.mouseLocation),
+               let id = NotchGeometry.screenID(screen) {
+                activeDisplayID = id
+            }
+        case .followPointer:
+            activeDisplayID = primaryDisplayID
+            if !state.expanded,
+               let screen = NotchGeometry.screen(containing: NSEvent.mouseLocation) {
+                positionPanel(on: screen, animated: true)
+            }
+        }
     }
 
     private func triggerSwipe(_ direction: NotchSwipeDirection) {

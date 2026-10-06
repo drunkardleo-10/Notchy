@@ -23,7 +23,7 @@ struct HUDEvent: Equatable {
 
 @MainActor
 final class HUDMonitor: NSObject {
-    private weak var state: NotchState?
+    private let states: () -> [NotchState]
     private var hideWork: DispatchWorkItem?
 
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
@@ -40,8 +40,8 @@ final class HUDMonitor: NSObject {
     private var lastCaps = false
     private var capsTimer: Timer?
 
-    init(state: NotchState) {
-        self.state = state
+    init(states: @escaping () -> [NotchState]) {
+        self.states = states
         super.init()
         setUpVolume()
         setUpBrightness()
@@ -53,10 +53,13 @@ final class HUDMonitor: NSObject {
 
 
     private func show(_ kind: HUDKind, duration: TimeInterval) {
-        guard let state, !state.expanded else { return }
-        state.hud = HUDEvent(kind: kind)
+        let visibleStates = states().filter { !$0.expanded }
+        guard !visibleStates.isEmpty else { return }
+        for state in visibleStates { state.hud = HUDEvent(kind: kind) }
         hideWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.state?.hud = nil }
+        let work = DispatchWorkItem { [weak self] in
+            for state in self?.states() ?? [] { state.hud = nil }
+        }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
     }
@@ -246,7 +249,10 @@ final class HUDMonitor: NSObject {
             guard let battery else { return }
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    if case .airpods(let current, _)? = self.state?.hud?.kind, current == name {
+                    if self.states().contains(where: { state in
+                        guard case .airpods(let current, _)? = state.hud?.kind else { return false }
+                        return current == name
+                    }) {
                         self.show(.airpods(name: name, battery: battery), duration: 3.5)
                     }
                 }

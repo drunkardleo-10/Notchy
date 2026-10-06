@@ -308,30 +308,62 @@ private struct SettingsInfoIcon: View {
     }
 }
 
-private struct ExpandTargetsRow: View {
-    @Binding var mainMac: Bool
-    @Binding var externalDisplays: Bool
-    let externalDisplaysAvailable: Bool
+private struct NotchDisplayModeRow: View {
+    @Binding var mode: String
+    @Binding var externalDisplayID: String
+    let externalDisplays: [NSScreen]
+
+    private var selectedMode: NotchDisplayMode {
+        NotchDisplayMode(rawValue: mode) ?? .main
+    }
 
     var body: some View {
-        HStack(spacing: 12) {
-            SettingsRowIcon(icon: "display", color: .cyan)
-            HStack(spacing: 7) {
-                Text("Expand on")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.92))
-                SettingsInfoIcon(help: "Choose which displays open the shelf when you hover over the notch.")
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                SettingsRowIcon(icon: "display", color: .cyan)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 7) {
+                        Text("Notch display")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.92))
+                        SettingsInfoIcon(help: "Choose which display shows the notch. All displays creates a separate, independently expandable notch on each screen.")
+                    }
+                    Text(selectedMode.detail)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Picker("Notch display", selection: $mode) {
+                    ForEach(NotchDisplayMode.allCases) { option in
+                        Text(option.title)
+                            .tag(option.rawValue)
+                            .disabled(option == .external && externalDisplays.isEmpty)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(width: 150, alignment: .trailing)
             }
-            Spacer(minLength: 4)
-            Toggle("Main Mac", isOn: $mainMac)
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .font(.system(size: 12, weight: .medium))
-            Toggle("External displays", isOn: $externalDisplays)
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .font(.system(size: 12, weight: .medium))
-                .disabled(!externalDisplaysAvailable)
+            if selectedMode == .external, !externalDisplays.isEmpty {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 42)
+                    Text("Display")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Spacer()
+                    Picker("External display", selection: $externalDisplayID) {
+                        ForEach(externalDisplays, id: \.self) { display in
+                            Text(display.localizedName)
+                                .tag(NotchGeometry.screenID(display) ?? "")
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 150, alignment: .trailing)
+                }
+                .padding(.leading, 42)
+            }
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 14)
@@ -443,6 +475,7 @@ private struct AnimationSpeedSelector: View {
 
 struct SettingsView: View {
     var onGlassPreviewChanged: (Bool) -> Void = { _ in }
+    var onDisplayConfigurationChanged: () -> Void = {}
 
     @AppStorage(Pref.media) private var media = true
     @AppStorage(Pref.shelf) private var shelf = false
@@ -469,8 +502,8 @@ struct SettingsView: View {
     @AppStorage(Pref.capsLockHUD) private var capsLockHUD = true
 
     @AppStorage(Pref.hoverOpen) private var hoverOpen = true
-    @AppStorage(Pref.expandOnMainDisplay) private var expandOnMainDisplay = true
-    @AppStorage(Pref.expandOnExternalDisplays) private var expandOnExternalDisplays = false
+    @AppStorage(Pref.notchDisplayMode) private var notchDisplayMode = NotchDisplayMode.main.rawValue
+    @AppStorage(Pref.externalDisplayID) private var externalDisplayID = ""
     @AppStorage(Pref.expandDelay) private var expandDelay = 0.25
     @AppStorage(Pref.notchAnimationSpeed) private var animationSpeed = NotchAnimationSpeed.normal.rawValue
     @AppStorage(Pref.hapticFeedback) private var haptics = true
@@ -478,7 +511,7 @@ struct SettingsView: View {
     @AppStorage(Pref.glassLevel) private var glassLevel = 0.5
     @AppStorage(Pref.clipboardLimit) private var limit = 50
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-    @State private var externalDisplaysAvailable = NotchGeometry.hasExternalDisplays
+    @State private var displayRefreshToken = 0
     @State private var selection: SettingsTab = .modules
 
     private var enabledCount: Int {
@@ -507,8 +540,27 @@ struct SettingsView: View {
         }
         .frame(width: 560, height: 600)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            externalDisplaysAvailable = NotchGeometry.hasExternalDisplays
+            displayRefreshToken += 1
+            if !NotchGeometry.externalDisplays.contains(where: { NotchGeometry.screenID($0) == externalDisplayID }),
+               let first = NotchGeometry.externalDisplays.first {
+                externalDisplayID = NotchGeometry.screenID(first) ?? ""
+            }
+            onDisplayConfigurationChanged()
         }
+        .onChange(of: notchDisplayMode) { _, rawValue in
+            if rawValue == NotchDisplayMode.external.rawValue,
+               !externalDisplays.contains(where: { NotchGeometry.screenID($0) == externalDisplayID }),
+               let first = externalDisplays.first {
+                externalDisplayID = NotchGeometry.screenID(first) ?? ""
+            }
+            onDisplayConfigurationChanged()
+        }
+        .onChange(of: externalDisplayID) { _, _ in onDisplayConfigurationChanged() }
+    }
+
+    private var externalDisplays: [NSScreen] {
+        _ = displayRefreshToken
+        return NotchGeometry.externalDisplays
     }
 
     private var modulesTab: some View {
@@ -707,10 +759,10 @@ struct SettingsView: View {
                         isOn: $hoverOpen
                     )
                     CardDivider()
-                    ExpandTargetsRow(
-                        mainMac: $expandOnMainDisplay,
-                        externalDisplays: $expandOnExternalDisplays,
-                        externalDisplaysAvailable: externalDisplaysAvailable
+                    NotchDisplayModeRow(
+                        mode: $notchDisplayMode,
+                        externalDisplayID: $externalDisplayID,
+                        externalDisplays: externalDisplays
                     )
                     CardDivider()
                     ExpandDelayRow(delay: $expandDelay)

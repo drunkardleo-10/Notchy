@@ -116,6 +116,38 @@ enum NotchSwipeDirection {
     case next
 }
 
+enum NotchDisplayMode: String, CaseIterable, Identifiable {
+    case main
+    case external
+    case all
+    case followPointer
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .main: "Main display"
+        case .external: "Another display"
+        case .all: "All displays"
+        case .followPointer: "Follow pointer"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .main: "Show one notch on your Mac display."
+        case .external: "Show one notch on a selected external display."
+        case .all: "Show an independent notch on every connected display."
+        case .followPointer: "Move one notch to the display under your pointer."
+        }
+    }
+
+    static var current: Self {
+        let rawValue = UserDefaults.standard.string(forKey: Pref.notchDisplayMode) ?? Self.main.rawValue
+        return Self(rawValue: rawValue) ?? .main
+    }
+}
+
 enum NotchGeometry {
     static var hasExternalDisplays: Bool {
         NSScreen.screens.count > 1
@@ -126,17 +158,45 @@ enum NotchGeometry {
     }
 
     static func allowsHoverExpansion(on screen: NSScreen) -> Bool {
-        let mainScreen = NSScreen.screens.first(where: isBuiltIn) ?? NSScreen.screens.first ?? NSScreen.main
-        return sameDisplay(screen, mainScreen)
-            ? Pref.bool(Pref.expandOnMainDisplay)
-            : Pref.bool(Pref.expandOnExternalDisplays)
+        switch NotchDisplayMode.current {
+        case .main:
+            return sameDisplay(screen, mainDisplay)
+        case .external:
+            let target = Self.screen(id: UserDefaults.standard.string(forKey: Pref.externalDisplayID))
+                ?? externalDisplays.first
+                ?? mainDisplay
+            return sameDisplay(screen, target)
+        case .all, .followPointer:
+            return true
+        }
+    }
+
+    static var mainDisplay: NSScreen {
+        NSScreen.screens.first(where: isBuiltIn) ?? NSScreen.main ?? NSScreen.screens.first!
+    }
+
+    static var externalDisplays: [NSScreen] {
+        NSScreen.screens.filter { !sameDisplay($0, mainDisplay) }
+    }
+
+    static func screen(id: String?) -> NSScreen? {
+        guard let id else { return nil }
+        return NSScreen.screens.first { screenID($0) == id }
+    }
+
+    static func screenID(_ screen: NSScreen) -> String? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue
     }
 
     static func targetScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 }
-            ?? NSScreen.screens.first(where: isBuiltIn)
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
+        switch NotchDisplayMode.current {
+        case .main:
+            return mainDisplay
+        case .external:
+            return screen(id: UserDefaults.standard.string(forKey: Pref.externalDisplayID)) ?? externalDisplays.first ?? mainDisplay
+        case .all, .followPointer:
+            return screen(containing: NSEvent.mouseLocation) ?? mainDisplay
+        }
     }
 
     static func notchSize(for screen: NSScreen) -> CGSize {
@@ -145,7 +205,8 @@ enum NotchGeometry {
             return CGSize(width: screen.frame.width - left.width - right.width,
                           height: screen.safeAreaInsets.top)
         }
-        return CGSize(width: 190, height: 32)
+        let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+        return CGSize(width: 190, height: max(0, menuBarHeight))
     }
 
     private static func isBuiltIn(_ screen: NSScreen) -> Bool {
@@ -165,6 +226,10 @@ enum NotchGeometry {
         }
         return leftNumber.uint32Value == rightNumber.uint32Value
     }
+}
+
+extension Notification.Name {
+    static let notchDisplayConfigurationDidChange = Notification.Name("NotchyDisplayConfigurationDidChange")
 }
 
 struct NotchShape: Shape {
