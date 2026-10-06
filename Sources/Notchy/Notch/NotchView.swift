@@ -816,7 +816,6 @@ struct MediaView: View {
             HStack(spacing: 20) {
                 Button {
                     media.previous()
-                    state.flashSwipe(.previous)
                 } label: {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 20, weight: .bold))
@@ -835,7 +834,6 @@ struct MediaView: View {
 
                 Button {
                     media.next()
-                    state.flashSwipe(.next)
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 20, weight: .bold))
