@@ -283,6 +283,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.evaluateHover()
             }
         }
+        state.onLyricsClosed = { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self else { return }
+                if let displayID { self.activeDisplayID = displayID }
+                self.evaluateHover()
+            }
+        }
     }
 
 
@@ -567,6 +574,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var size = state.expandedSize
         if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
             size.width = max(size.width, NotchState.queueExpandedSize.width)
+        } else if Date().timeIntervalSince(state.lyricsClosedAt) < 1.0 {
+            size.width = max(size.width, NotchState.lyricsExpandedSize.width)
         }
         return point.x >= frame.midX - size.width / 2 - 14 && point.x <= frame.midX + size.width / 2 + 14
             && point.y >= frame.maxY - size.height - 14 && point.y <= frame.maxY + 4
@@ -610,6 +619,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var s = state.expandedSize
             if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
                 s.width = max(s.width, NotchState.queueExpandedSize.width)
+            } else if Date().timeIntervalSince(state.lyricsClosedAt) < 1.0 {
+                s.width = max(s.width, NotchState.lyricsExpandedSize.width)
             }
             return loc.x >= f.midX - s.width / 2 - 14 && loc.x <= f.midX + s.width / 2 + 14
                 && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4

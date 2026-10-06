@@ -817,21 +817,6 @@ struct LiveLyricsView: View {
                     }
                 }
             }
-
-            Button {
-                withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
-                    state.showLyrics = false
-                }
-            } label: {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    .font(.system(size: 9.5, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(width: 22, height: 22)
-                    .background(Color.white.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 2)
-            .padding(.top, 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -851,7 +836,7 @@ struct MediaView: View {
         } else {
             HStack(spacing: 0) {
                 playerSection
-                    .frame(width: (state.showQueue || state.showLyrics) ? 412 : nil)
+                    .frame(width: state.showQueue ? 412 : (state.showLyrics ? 236 : 428))
 
                 if state.showQueue {
                     Rectangle()
@@ -868,12 +853,12 @@ struct MediaView: View {
                     Rectangle()
                         .fill(Color.white.opacity(0.12))
                         .frame(width: 1)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 10)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
 
                     LiveLyricsView(lyrics: media.lyrics, media: media, state: state)
-                        .padding(.trailing, 24)
+                        .padding(.trailing, 16)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -883,23 +868,24 @@ struct MediaView: View {
 
     private var playerSection: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 ArtworkView(
                     image: media.artwork,
                     size: 52,
                     cornerRadius: 13,
                     namespace: state.expanded ? albumArtNamespace : nil
                 )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 13)
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-                    }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 13)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(media.title)
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .lineLimit(1)
+                            .truncationMode(.tail)
 
                         if media.lyrics.hasLyrics || media.lyrics.isFetching {
                             Button {
@@ -921,93 +907,109 @@ struct MediaView: View {
                             .scaleEffect(hoveringLyrics ? 1.06 : 1.0)
                             .animation(.spring(response: 0.25, dampingFraction: 0.75), value: hoveringLyrics)
                             .onHover { hoveringLyrics = $0 }
+                            .layoutPriority(1)
+                        }
+
+                        if state.showLyrics {
+                            EqualizerBars(
+                                active: media.isPlaying,
+                                useGradient: true,
+                                tint: media.artworkTint,
+                                namespace: state.expanded ? visualizerNamespace : nil
+                            )
+                            .layoutPriority(1)
                         }
                     }
 
                     Text(media.artist.isEmpty ? media.sourceLabel : media.artist)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 8)
+                if !state.showLyrics {
+                    Spacer(minLength: 8)
 
-                EqualizerBars(
-                    active: media.isPlaying,
-                    useGradient: true,
-                    tint: media.artworkTint,
-                    namespace: state.expanded ? visualizerNamespace : nil
-                )
+                    EqualizerBars(
+                        active: media.isPlaying,
+                        useGradient: true,
+                        tint: media.artworkTint,
+                        namespace: state.expanded ? visualizerNamespace : nil
+                    )
+                }
             }
 
             SeekBar(media: media)
 
             controls
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, state.showLyrics ? 10 : 16)
         .offset(x: state.swipeOffset)
         .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
     }
 
     private var controls: some View {
         ZStack {
-            HStack {
-                HStack(spacing: 6) {
-                    Button {
-                        withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
-                            state.showQueue.toggle()
+            if !state.showLyrics {
+                HStack {
+                    HStack(spacing: 6) {
+                        Button {
+                            withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
+                                state.showQueue.toggle()
+                            }
+                        } label: {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 16, weight: .medium))
                         }
-                    } label: {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 16, weight: .medium))
-                    }
-                    .buttonStyle(MediaControlButtonStyle(isActive: state.showQueue))
+                        .buttonStyle(MediaControlButtonStyle(isActive: state.showQueue))
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 1, height: 14)
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: 1, height: 14)
 
-                    Button { favorite.toggle() } label: {
-                        Image(systemName: favorite ? "star.fill" : "star")
-                            .contentTransition(.symbolEffect)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(favorite ? .yellow : .white)
+                        Button { favorite.toggle() } label: {
+                            Image(systemName: favorite ? "star.fill" : "star")
+                                .contentTransition(.symbolEffect)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(favorite ? .yellow : .white)
+                        }
+                        .buttonStyle(MediaControlButtonStyle())
                     }
-                    .buttonStyle(MediaControlButtonStyle())
+
+                    Spacer()
+
+                    HStack(spacing: 6) {
+                        Button { media.toggleShuffle() } label: {
+                            Image(systemName: "shuffle")
+                                .contentTransition(.symbolEffect)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(media.shuffleOn ? Color.green : (media.canShuffle ? .white : .white.opacity(0.35)))
+                        }
+                        .buttonStyle(MediaControlButtonStyle())
+                        .disabled(!media.canShuffle)
+
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: 1, height: 14)
+
+                        Button {
+                            NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .buttonStyle(MediaControlButtonStyle())
+                    }
                 }
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    Button { media.toggleShuffle() } label: {
-                        Image(systemName: "shuffle")
-                            .contentTransition(.symbolEffect)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(media.shuffleOn ? Color.green : (media.canShuffle ? .white : .white.opacity(0.35)))
-                    }
-                    .buttonStyle(MediaControlButtonStyle())
-                    .disabled(!media.canShuffle)
-
-                    Rectangle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 1, height: 14)
-
-                    Button {
-                        NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .medium))
-                    }
-                    .buttonStyle(MediaControlButtonStyle())
-                }
+                .transition(.opacity)
             }
 
-            HStack(spacing: 20) {
+            HStack(spacing: state.showLyrics ? 16 : 20) {
                 Button {
                     media.previous()
                 } label: {
                     Image(systemName: "backward.fill")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 19, weight: .bold))
                 }
                 .buttonStyle(MediaControlButtonStyle(
                     isHighlighted: state.activeSwipeDirection == .previous,
@@ -1017,7 +1019,7 @@ struct MediaView: View {
                 Button { media.playPause() } label: {
                     Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
                         .contentTransition(.symbolEffect)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 26, weight: .bold))
                 }
                 .buttonStyle(MediaControlButtonStyle())
 
@@ -1025,7 +1027,7 @@ struct MediaView: View {
                     media.next()
                 } label: {
                     Image(systemName: "forward.fill")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 19, weight: .bold))
                 }
                 .buttonStyle(MediaControlButtonStyle(
                     isHighlighted: state.activeSwipeDirection == .next,

@@ -54,6 +54,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
 @MainActor
 final class NotchState: ObservableObject {
     static let compactExpandedSize = CGSize(width: 480, height: 186)
+    static let lyricsExpandedSize = CGSize(width: 590, height: 186)
     static let queueExpandedSize = CGSize(width: 820, height: 186)
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let panelPadding: CGFloat = 24
@@ -71,6 +72,10 @@ final class NotchState: ObservableObject {
     }
     @Published var showLyrics = false {
         didSet {
+            if !showLyrics && oldValue {
+                lyricsClosedAt = Date()
+                onLyricsClosed?()
+            }
             if showLyrics && showQueue {
                 showQueue = false
             }
@@ -78,9 +83,17 @@ final class NotchState: ObservableObject {
     }
     var queueClosedAt: Date = .distantPast
     var onQueueClosed: (() -> Void)?
+    var lyricsClosedAt: Date = .distantPast
+    var onLyricsClosed: (() -> Void)?
 
     var expandedSize: CGSize {
-        (showQueue || showLyrics) ? Self.queueExpandedSize : Self.compactExpandedSize
+        if showLyrics {
+            return Self.lyricsExpandedSize
+        }
+        if showQueue {
+            return Self.queueExpandedSize
+        }
+        return Self.compactExpandedSize
     }
 
     @Published var expanded = false
