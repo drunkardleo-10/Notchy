@@ -231,7 +231,8 @@ struct NotchView: View {
                             LiveActivityView(
                                 media: media,
                                 notch: state.notchSize,
-                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil
+                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil,
+                                state: state
                             )
                         }
                     }
@@ -553,22 +554,31 @@ struct ArtworkView: View {
 
 struct MediaControlButtonStyle: ButtonStyle {
     var isActive: Bool = false
+    var isHighlighted: Bool = false
+    var isFlashing: Bool = false
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: 36, height: 36)
             .background {
-                if isActive {
+                if isFlashing {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.18))
+                        .fill(Color.white.opacity(0.28))
+                } else if isActive || isHighlighted {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.white.opacity(0.20))
                 } else if hovering || configuration.isPressed {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.white.opacity(configuration.isPressed ? 0.18 : 0.10))
                 }
             }
             .foregroundStyle(.white)
-            .scaleEffect(configuration.isPressed ? 0.85 : (hovering ? 1.05 : 1.0))
+            .scaleEffect(
+                isFlashing ? 0.86 : (configuration.isPressed ? 0.85 : (isHighlighted ? 1.15 : (hovering ? 1.05 : 1.0)))
+            )
+            .animation(NotchAnimation.pressSnap, value: isFlashing)
+            .animation(NotchAnimation.hoverScale, value: isHighlighted)
             .animation(NotchAnimation.press, value: configuration.isPressed)
             .animation(NotchAnimation.hover, value: hovering)
             .onHover { hovering = $0 }
@@ -746,6 +756,8 @@ struct MediaView: View {
             controls
         }
         .padding(.horizontal, 16)
+        .offset(x: state.swipeOffset)
+        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
     }
 
     private var controls: some View {
@@ -802,11 +814,17 @@ struct MediaView: View {
             }
 
             HStack(spacing: 20) {
-                Button { media.previous() } label: {
+                Button {
+                    media.previous()
+                    state.flashSwipe(.previous)
+                } label: {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 20, weight: .bold))
                 }
-                .buttonStyle(MediaControlButtonStyle())
+                .buttonStyle(MediaControlButtonStyle(
+                    isHighlighted: state.activeSwipeDirection == .previous,
+                    isFlashing: state.flashDirection == .previous
+                ))
 
                 Button { media.playPause() } label: {
                     Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
@@ -815,11 +833,17 @@ struct MediaView: View {
                 }
                 .buttonStyle(MediaControlButtonStyle())
 
-                Button { media.next() } label: {
+                Button {
+                    media.next()
+                    state.flashSwipe(.next)
+                } label: {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 20, weight: .bold))
                 }
-                .buttonStyle(MediaControlButtonStyle())
+                .buttonStyle(MediaControlButtonStyle(
+                    isHighlighted: state.activeSwipeDirection == .next,
+                    isFlashing: state.flashDirection == .next
+                ))
             }
         }
     }

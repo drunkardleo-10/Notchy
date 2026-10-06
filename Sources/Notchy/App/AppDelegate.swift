@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastDir = 0
     private var reversals: [Date] = []
     private var darwinTokens: [Int32] = []
+    private var swipeAccumulator: CGFloat = 0
+    private var swipeTriggered = false
+    private var swipeResetWork: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Pref.registerDefaults()
@@ -204,6 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.onMouse(type, dx: dx) }
             return event
         }) { monitors.append(local) }
+
+        let scrollMask: NSEvent.EventTypeMask = [.scrollWheel]
+        if let globalScroll = NSEvent.addGlobalMonitorForEvents(matching: scrollMask, handler: { [weak self] event in
+            _ = MainActor.assumeIsolated { self?.handleScrollWheel(event) }
+        }) { monitors.append(globalScroll) }
+        if let localScroll = NSEvent.addLocalMonitorForEvents(matching: scrollMask, handler: { [weak self] event in
+            let consumed = MainActor.assumeIsolated { self?.handleScrollWheel(event) ?? false }
+            return consumed ? nil : event
+        }) { monitors.append(localScroll) }
     }
 
     private func onMouse(_ type: NSEvent.EventType, dx: CGFloat) {
@@ -280,5 +292,140 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         expandWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + (draggingContent ? 0.05 : 0.15), execute: work)
+    }
+
+    private func isMouseInNotch(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+
+        if state.expanded {
+            var s = state.expandedSize
+            if Date().timeIntervalSince(state.queueClosedAt) < 2.0 {
+                s.width = max(s.width, NotchState.queueExpandedSize.width)
+            }
+            return loc.x >= f.midX - s.width / 2 - 14 && loc.x <= f.midX + s.width / 2 + 14
+                && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
+        } else {
+            let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
+            let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth : 8
+            let slackY: CGFloat = 4
+            return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
+        }
+    }
+
+    @discardableResult
+    private func handleScrollWheel(_ event: NSEvent) -> Bool {
+        guard Pref.bool(Pref.media) else { return false }
+        guard media.hasTrack || state.tab == .media else { return false }
+        if state.expanded && state.tab != .media { return false }
+
+        let loc = NSEvent.mouseLocation
+        guard isMouseInNotch(loc) else {
+            resetSwipeGesture()
+            return false
+        }
+
+        guard event.hasPreciseScrollingDeltas else { return false }
+
+        if event.momentumPhase != [] {
+            if state.swipeOffset != 0 || state.activeSwipeDirection != nil {
+                withAnimation(NotchAnimation.pressSettle) {
+                    state.swipeOffset = 0
+                    state.activeSwipeDirection = nil
+                }
+            }
+            return false
+        }
+
+        let rawDx = event.scrollingDeltaX
+        let rawDy = event.scrollingDeltaY
+
+        if event.phase == .began {
+            swipeAccumulator = 0
+            swipeTriggered = false
+            swipeResetWork?.cancel()
+            swipeResetWork = nil
+        }
+
+        guard abs(rawDx) > abs(rawDy) || abs(swipeAccumulator) > 5 else {
+            return false
+        }
+
+        expandWork?.cancel()
+        expandWork = nil
+
+        let physicalDx = event.isDirectionInvertedFromDevice ? rawDx : -rawDx
+        swipeAccumulator += physicalDx
+
+        let offset = min(max(swipeAccumulator * 0.35, -24), 24)
+        withAnimation(NotchAnimation.drag) {
+            state.swipeOffset = offset
+        }
+
+        if swipeAccumulator < -15 {
+            withAnimation(NotchAnimation.hover) {
+                state.activeSwipeDirection = .previous
+            }
+        } else if swipeAccumulator > 15 {
+            withAnimation(NotchAnimation.hover) {
+                state.activeSwipeDirection = .next
+            }
+        } else {
+            withAnimation(NotchAnimation.hover) {
+                state.activeSwipeDirection = nil
+            }
+        }
+
+        let threshold: CGFloat = 36
+        if !swipeTriggered {
+            if swipeAccumulator <= -threshold {
+                swipeTriggered = true
+                triggerSwipe(.previous)
+            } else if swipeAccumulator >= threshold {
+                swipeTriggered = true
+                triggerSwipe(.next)
+            }
+        }
+
+        if event.phase == .ended || event.phase == .cancelled {
+            resetSwipeGesture()
+        } else {
+            swipeResetWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                self?.resetSwipeGesture()
+            }
+            swipeResetWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+        }
+
+        return true
+    }
+
+    private func triggerSwipe(_ direction: NotchSwipeDirection) {
+        if Pref.bool(Pref.hapticFeedback) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+        switch direction {
+        case .previous:
+            media.previous()
+            state.flashSwipe(.previous)
+        case .next:
+            media.next()
+            state.flashSwipe(.next)
+        }
+    }
+
+    private func resetSwipeGesture() {
+        swipeResetWork?.cancel()
+        swipeResetWork = nil
+        swipeAccumulator = 0
+        swipeTriggered = false
+        if state.swipeOffset != 0 || state.activeSwipeDirection != nil {
+            withAnimation(NotchAnimation.pressSettle) {
+                state.swipeOffset = 0
+                state.activeSwipeDirection = nil
+            }
+        }
     }
 }
