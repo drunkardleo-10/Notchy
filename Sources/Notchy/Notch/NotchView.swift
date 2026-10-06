@@ -58,7 +58,6 @@ struct NotchView: View {
     @ObservedObject var shortcuts: ShortcutsModel
     @ObservedObject var highAlert: HighAlertModel
 
-    @Namespace private var tabNamespace
     @Namespace private var albumArtNamespace
     @Namespace private var visualizerNamespace
 
@@ -129,7 +128,7 @@ struct NotchView: View {
     private var width: CGFloat { state.expanded ? state.expandedSize.width : collapsedSize.width }
     private var height: CGFloat { state.expanded ? state.expandedSize.height : collapsedSize.height }
     private var contentHorizontalInset: CGFloat {
-        (state.showQueue || state.showLyrics) ? 24 : 26
+        24
     }
     private var expansionAnimation: Animation {
         state.expanded
@@ -291,11 +290,8 @@ struct NotchView: View {
     }
 
     private var content: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             Spacer().frame(height: max(state.notchSize.height + 4, 16))
-            if tabs.count > 1 {
-                tabBar
-            }
             Group {
                 switch activeTab {
                 case .media: MediaView(
@@ -318,49 +314,8 @@ struct NotchView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(nil, value: activeTab)
         }
-        .padding(.bottom, isCompact ? 22 : 20)
+        .padding(.bottom, isCompact ? 18 : 20)
         .foregroundStyle(.white)
-    }
-
-    private var tabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(tabs) { tab in
-                Button {
-                    withAnimation(NotchAnimation.spring(response: 0.32, dampingFraction: 0.8)) {
-                        state.tab = tab
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: tab.icon)
-                            .contentTransition(.symbolEffect)
-                        if state.tab == tab {
-                            Text(tab.title)
-                                .lineLimit(1)
-                                .fixedSize()
-                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                        }
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background {
-                        if state.tab == tab {
-                            Capsule()
-                                .fill(Color.white.opacity(0.18))
-                                .matchedGeometryEffect(id: "activeTabPill", in: tabNamespace)
-                        }
-                    }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(state.tab == tab ? .white : .white.opacity(0.55))
-            }
-            Spacer()
-            Button { NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil) } label: {
-                Image(systemName: "gearshape").font(.system(size: 11))
-            }
-            .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55))
-        }
-        .animation(NotchAnimation.tabSelect, value: state.tab)
     }
 }
 
@@ -948,7 +903,7 @@ struct MediaView: View {
 
             controls
         }
-        .padding(.horizontal, state.showLyrics ? 10 : 16)
+        .padding(.horizontal, 24)
         .offset(x: state.swipeOffset)
         .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
     }
@@ -1009,7 +964,7 @@ struct MediaView: View {
                 .transition(.opacity)
             }
 
-            HStack(spacing: state.showLyrics ? 16 : 20) {
+            HStack(spacing: 20) {
                 Button {
                     media.previous()
                 } label: {
