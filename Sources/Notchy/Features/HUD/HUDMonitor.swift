@@ -34,11 +34,15 @@ final class HUDMonitor: NSObject {
     private var brightnessTimer: Timer?
     private typealias GetBrightness = @convention(c) (UInt32, UnsafeMutablePointer<Float>) -> Int32
     private var getBrightness: GetBrightness?
+    private typealias SetBrightness = @convention(c) (UInt32, Float) -> Int32
+    private var setBrightness: SetBrightness?
 
     private var lastOnAC: Bool?
     private var lastPercent = 100
     private var lastCaps = false
     private var capsTimer: Timer?
+    private var mediaKeyInterceptor: MediaKeyInterceptor?
+    private let feedbackSound = NSSound(contentsOfFile: "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/volume.aiff", byReference: true)
 
     init(states: @escaping () -> [NotchState]) {
         self.states = states
@@ -48,6 +52,8 @@ final class HUDMonitor: NSObject {
         setUpPower()
         setUpLock()
         setUpCapsLock()
+        mediaKeyInterceptor = MediaKeyInterceptor(hudMonitor: self)
+        mediaKeyInterceptor?.start()
         IOBluetoothDevice.register(forConnectNotifications: self, selector: #selector(deviceConnected(_:device:)))
     }
 
@@ -129,10 +135,83 @@ final class HUDMonitor: NSObject {
     }
 
 
+    func setVolume(_ volume: Float) {
+        guard deviceID != kAudioObjectUnknown else { return }
+        let clamped = max(0, min(1, volume))
+        var addr = address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume)
+        var vol: Float32 = clamped
+        let size = UInt32(MemoryLayout<Float32>.size)
+        if AudioObjectSetPropertyData(deviceID, &addr, 0, nil, size, &vol) != noErr {
+            var scalarAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyVolumeScalar,
+                mScope: kAudioDevicePropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectSetPropertyData(deviceID, &scalarAddr, 0, nil, size, &vol) != noErr {
+                for ch: UInt32 in 1...2 {
+                    var chAddr = AudioObjectPropertyAddress(
+                        mSelector: kAudioDevicePropertyVolumeScalar,
+                        mScope: kAudioDevicePropertyScopeOutput,
+                        mElement: ch
+                    )
+                    _ = AudioObjectSetPropertyData(deviceID, &chAddr, 0, nil, size, &vol)
+                }
+            }
+        }
+        lastVolume = clamped
+    }
+
+    func setMuted(_ muted: Bool) {
+        guard deviceID != kAudioObjectUnknown else { return }
+        var addr = address(kAudioDevicePropertyMute)
+        var val: UInt32 = muted ? 1 : 0
+        let size = UInt32(MemoryLayout<UInt32>.size)
+        _ = AudioObjectSetPropertyData(deviceID, &addr, 0, nil, size, &val)
+        lastMuted = muted
+    }
+
+    func stepVolume(up: Bool, fine: Bool, shiftOnly: Bool) {
+        guard Pref.bool(Pref.volumeHUD) else { return }
+        let current = readVolume() ?? (lastVolume >= 0 ? lastVolume : 0.5)
+        let step: Float = (1.0 / 16.0) / (fine ? 4.0 : 1.0)
+        let next = max(0, min(1, current + (up ? step : -step)))
+        if readMuted() {
+            setMuted(false)
+        }
+        setVolume(next)
+        playFeedbackSoundIfNeeded(shiftOnly: shiftOnly)
+        show(.volume(next, muted: false), duration: 1.6)
+    }
+
+    func toggleMute() {
+        guard Pref.bool(Pref.volumeHUD) else { return }
+        let currentMuted = readMuted()
+        let nextMuted = !currentMuted
+        setMuted(nextMuted)
+        let current = readVolume() ?? (lastVolume >= 0 ? lastVolume : 0.5)
+        show(.volume(current, muted: nextMuted), duration: 1.6)
+    }
+
+    private func playFeedbackSoundIfNeeded(shiftOnly: Bool) {
+        let feedbackPref = (UserDefaults.standard.persistentDomain(forName: "NSGlobalDomain")?["com.apple.sound.beep.feedback"] as? Int) == 1
+        let shouldPlay = shiftOnly ? !feedbackPref : feedbackPref
+        guard shouldPlay else { return }
+        if let sound = feedbackSound {
+            if sound.isPlaying {
+                sound.stop()
+            }
+            sound.play()
+        }
+    }
+
     private func setUpBrightness() {
-        if let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY),
-           let sym = dlsym(handle, "DisplayServicesGetBrightness") {
-            getBrightness = unsafeBitCast(sym, to: GetBrightness.self)
+        if let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_LAZY) {
+            if let sym = dlsym(handle, "DisplayServicesGetBrightness") {
+                getBrightness = unsafeBitCast(sym, to: GetBrightness.self)
+            }
+            if let sym = dlsym(handle, "DisplayServicesSetBrightness") {
+                setBrightness = unsafeBitCast(sym, to: SetBrightness.self)
+            }
         }
         guard getBrightness != nil else { return }
         lastBrightness = readBrightness() ?? -1
@@ -145,13 +224,29 @@ final class HUDMonitor: NSObject {
         var ids = [CGDirectDisplayID](repeating: 0, count: 8)
         var count: UInt32 = 0
         CGGetActiveDisplayList(8, &ids, &count)
-        return ids.prefix(Int(count)).first { CGDisplayIsBuiltin($0) != 0 }
+        return ids.prefix(Int(count)).first { CGDisplayIsBuiltin($0) != 0 } ?? CGMainDisplayID()
     }
 
     private func readBrightness() -> Float? {
         guard let getBrightness, let display = builtInDisplay() else { return nil }
         var value: Float = 0
         return getBrightness(display, &value) == 0 ? value : nil
+    }
+
+    func setBrightness(_ value: Float) {
+        guard let setBrightness, let display = builtInDisplay() else { return }
+        let clamped = max(0, min(1, value))
+        _ = setBrightness(display, clamped)
+        lastBrightness = clamped
+    }
+
+    func stepBrightness(up: Bool, fine: Bool) {
+        guard Pref.bool(Pref.brightnessHUD) else { return }
+        let current = readBrightness() ?? (lastBrightness >= 0 ? lastBrightness : 0.5)
+        let step: Float = (1.0 / 16.0) / (fine ? 4.0 : 1.0)
+        let next = max(0, min(1, current + (up ? step : -step)))
+        setBrightness(next)
+        show(.brightness(next), duration: 1.6)
     }
 
     private func pollBrightness() {

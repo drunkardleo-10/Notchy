@@ -155,6 +155,11 @@ struct NotchView: View {
         }
     }
 
+    private var hidesLiveActivityForHUD: Bool {
+        guard state.hud != nil else { return false }
+        return !isPeekHUD
+    }
+
     private var notchBackground: some View {
         ZStack {
             if #available(macOS 26.0, *) {
@@ -185,7 +190,7 @@ struct NotchView: View {
             .opacity(state.expanded ? 1 : 0)
         }
         .overlay(alignment: .bottom) {
-            if !state.expanded && !shelf.items.isEmpty && liveSize == nil {
+            if !state.expanded && !shelf.items.isEmpty && liveSize == nil && state.hud == nil {
                 Circle().fill(.blue).frame(width: 5, height: 5).offset(y: -3)
             }
         }
@@ -225,15 +230,15 @@ struct NotchView: View {
                             LiveActivityView(
                                 media: media,
                                 notch: state.notchSize,
-                                albumArtNamespace: state.hud == nil ? albumArtNamespace : nil,
-                                visualizerNamespace: state.hud == nil ? visualizerNamespace : nil,
+                                albumArtNamespace: hidesLiveActivityForHUD ? nil : albumArtNamespace,
+                                visualizerNamespace: hidesLiveActivityForHUD ? nil : visualizerNamespace,
                                 state: state
                             )
                         }
                     }
                     .frame(width: size.width, height: size.height)
-                    .blur(radius: state.hud == nil ? 0 : 7)
-                    .opacity(state.hud == nil ? 1 : 0)
+                    .blur(radius: hidesLiveActivityForHUD ? 7 : 0)
+                    .opacity(hidesLiveActivityForHUD ? 0 : 1)
                     .transition(.opacity.animation(expansionAnimation))
                     .zIndex(1)
                 }

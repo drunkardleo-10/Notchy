@@ -73,8 +73,8 @@ enum HUDLayout {
     static let sideWidth: CGFloat = 95
     static let inlineVolumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let inlineVolumeTrailingWidth: CGFloat = 80
-    static let peekLeadingWidth: CGFloat = 32
-    static let peekTrailingWidth: CGFloat = 54
+    static let peekLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
+    static let peekTrailingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let peekHeight: CGFloat = 68
     static let tallExtraHeight: CGFloat = 46
 
