@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 struct QueueTrack: Identifiable, Equatable {
@@ -9,6 +10,30 @@ struct QueueTrack: Identifiable, Equatable {
     var artworkURL: String?
     var symbol: String
     var accent: Color
+}
+
+private struct MusicArtworkTrack {
+    let id: String
+    let title: String
+    let artist: String
+    let artwork: NSImage?
+}
+
+private struct MusicQueueSnapshot {
+    let previous: [MusicArtworkTrack]
+    let current: MusicArtworkTrack?
+    let upcoming: [MusicArtworkTrack]
+    let shuffleEnabled: Bool
+}
+
+private struct SystemNowPlayingTrack {
+    let title: String
+    let artist: String
+    let bundleIdentifier: String?
+    let artwork: NSImage?
+    let duration: Double
+    let elapsedTime: Double
+    let isPlaying: Bool
 }
 
 @MainActor
@@ -24,6 +49,9 @@ final class MediaController: ObservableObject {
     @Published var sourceLabel = ""
     @Published var position: Double = 0
     @Published var duration: Double = 0
+    @Published private(set) var artworkSkipAnimationID = 0
+    @Published private(set) var artworkSkipDirection: NotchSwipeDirection?
+    @Published private(set) var artworkSkipArtwork: NSImage?
     @Published var shuffleOn = false
     @Published var repeatOn = false
     @Published var canShuffle = false
@@ -32,6 +60,13 @@ final class MediaController: ObservableObject {
     @Published var lyrics = LyricsService()
 
     private var lastFetchedTrack = ""
+    private var lastQueueFetchDate = Date.distantPast
+    private var previousQueueTracks: [MusicArtworkTrack] = []
+    private var prefetchedUpcomingTracks: [MusicArtworkTrack] = []
+    private var prefetchedMusicArtwork: [String: NSImage] = [:]
+    private var prefetchedMusicQueueTrackKey = ""
+    private var prefetchedMusicQueueIsShuffled = false
+    private var artworkSkipWorkItem: DispatchWorkItem?
 
     private(set) var positionDate = Date()
 
@@ -43,6 +78,9 @@ final class MediaController: ObservableObject {
 
     private var native: (app: String, parts: [String])?
     private var browserTrack: BrowserTrack?
+    private var systemNowPlayingTrack: SystemNowPlayingTrack?
+    private var systemNowPlayingBusy = false
+    private var activeIsSystemNowPlaying = false
     private var activeIsBrowser = false
     private var browserBusy = false
     private var artworkURL: String?
@@ -62,12 +100,32 @@ final class MediaController: ObservableObject {
     private var pendingPlayPauseDispatch: DispatchWorkItem?
 
     private typealias MRMediaRemoteSendCommandFunc = @convention(c) (Int, AnyObject?) -> Void
+    private typealias MRNowPlayingInfoCompletion = @convention(block) (CFDictionary?) -> Void
+    private typealias MRGetNowPlayingInfoFunc = @convention(c) (DispatchQueue, @escaping MRNowPlayingInfoCompletion) -> Void
+    private typealias MRNowPlayingBundleIDCompletion = @convention(block) (CFString?) -> Void
+    private typealias MRGetNowPlayingBundleIDFunc = @convention(c) (DispatchQueue, @escaping MRNowPlayingBundleIDCompletion) -> Void
     private static let sendCommandFunc: MRMediaRemoteSendCommandFunc? = {
         guard let bundle = CFBundleCreate(kCFAllocatorDefault, NSURL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")),
               let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteSendCommand" as CFString) else {
             return nil
         }
         return unsafeBitCast(ptr, to: MRMediaRemoteSendCommandFunc.self)
+    }()
+
+    private static let getNowPlayingInfoFunc: MRGetNowPlayingInfoFunc? = {
+        guard let bundle = CFBundleCreate(kCFAllocatorDefault, NSURL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")),
+              let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingInfo" as CFString) else {
+            return nil
+        }
+        return unsafeBitCast(ptr, to: MRGetNowPlayingInfoFunc.self)
+    }()
+
+    private static let getNowPlayingBundleIDFunc: MRGetNowPlayingBundleIDFunc? = {
+        guard let bundle = CFBundleCreate(kCFAllocatorDefault, NSURL(fileURLWithPath: "/System/Library/PrivateFrameworks/MediaRemote.framework")),
+              let ptr = CFBundleGetFunctionPointerForName(bundle, "MRMediaRemoteGetNowPlayingApplicationDisplayID" as CFString) else {
+            return nil
+        }
+        return unsafeBitCast(ptr, to: MRGetNowPlayingBundleIDFunc.self)
     }()
 
     static func sendMediaRemoteCommand(_ command: Int) {
@@ -77,6 +135,13 @@ final class MediaController: ObservableObject {
     private static let players = [("Spotify", "com.spotify.client"), ("Music", "com.apple.Music")]
 
     nonisolated(unsafe) private static let imageCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 150
+        cache.totalCostLimit = 60 * 1024 * 1024
+        return cache
+    }()
+
+    nonisolated(unsafe) private static let musicArtworkCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 150
         cache.totalCostLimit = 60 * 1024 * 1024
@@ -111,6 +176,12 @@ final class MediaController: ObservableObject {
         RunLoop.main.add(t3, forMode: .common)
         timers.append(t3)
 
+        let t4 = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshSystemNowPlaying() }
+        }
+        RunLoop.main.add(t4, forMode: .common)
+        timers.append(t4)
+
         DistributedNotificationCenter.default().addObserver(
             forName: NSNotification.Name("com.spotify.client.PlaybackStateChanged"),
             object: nil,
@@ -125,6 +196,86 @@ final class MediaController: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.refreshNative() }
         }
+        refreshSystemNowPlaying()
+    }
+
+    private func refreshSystemNowPlaying() {
+        guard Pref.bool(Pref.media), !systemNowPlayingBusy,
+              Self.getNowPlayingInfoFunc != nil else { return }
+        systemNowPlayingBusy = true
+        Self.requestSystemNowPlaying { [weak self] track in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.systemNowPlayingBusy = false
+                self.systemNowPlayingTrack = track
+                if self.native?.parts.first != "playing" { self.recompute() }
+            }
+        }
+    }
+
+    private static func requestSystemNowPlaying(completion: @escaping (SystemNowPlayingTrack?) -> Void) {
+        guard let getInfo = getNowPlayingInfoFunc else {
+            completion(nil)
+            return
+        }
+        let queue = DispatchQueue.global(qos: .userInitiated)
+        let readInfo: (String?) -> Void = { bundleIdentifier in
+            getInfo(queue) { info in
+                completion(parseSystemNowPlaying(info, bundleIdentifier: bundleIdentifier))
+            }
+        }
+        if let getBundleID = getNowPlayingBundleIDFunc {
+            getBundleID(queue) { bundleID in
+                readInfo(bundleID.map { $0 as String })
+            }
+        } else {
+            readInfo(nil)
+        }
+    }
+
+    nonisolated private static func parseSystemNowPlaying(
+        _ rawInfo: CFDictionary?,
+        bundleIdentifier: String?
+    ) -> SystemNowPlayingTrack? {
+        guard let rawInfo, let info = rawInfo as? [String: Any] else { return nil }
+
+        func value(_ keys: [String]) -> Any? {
+            for key in keys {
+                if let value = info[key] { return value }
+            }
+            return nil
+        }
+        func string(_ keys: [String]) -> String {
+            (value(keys) as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
+        func number(_ keys: [String]) -> Double? {
+            (value(keys) as? NSNumber)?.doubleValue ?? (value(keys) as? Double)
+        }
+
+        let title = string(["kMRMediaRemoteNowPlayingInfoTitle", "title"])
+        guard !title.isEmpty else { return nil }
+        let artist = string(["kMRMediaRemoteNowPlayingInfoArtist", "artist"])
+        let artworkData = value(["kMRMediaRemoteNowPlayingInfoArtworkData", "artworkData"]) as? Data
+        let cacheKey = "now-playing::\(bundleIdentifier ?? "")::\(title)::\(artist)" as NSString
+        var artwork = imageCache.object(forKey: cacheKey)
+        if artwork == nil, let artworkData, let decoded = decodeArtworkImage(artworkData) {
+            artwork = decoded
+            imageCache.setObject(decoded, forKey: cacheKey, cost: artworkData.count)
+        }
+        let duration = max(0, number(["kMRMediaRemoteNowPlayingInfoDuration", "duration"]) ?? 0)
+        let elapsed = max(0, number(["kMRMediaRemoteNowPlayingInfoElapsedTime", "elapsedTime"]) ?? 0)
+        let playbackRate = number(["kMRMediaRemoteNowPlayingInfoPlaybackRate", "playbackRate"])
+        let isPlaying = playbackRate.map { $0 > 0 } ?? (value(["isPlaying"]) as? Bool ?? true)
+
+        return SystemNowPlayingTrack(
+            title: title,
+            artist: artist,
+            bundleIdentifier: bundleIdentifier,
+            artwork: artwork,
+            duration: duration,
+            elapsedTime: elapsed,
+            isPlaying: isPlaying
+        )
     }
 
 
@@ -157,13 +308,13 @@ final class MediaController: ObservableObject {
                 guard self.queryEpoch == epoch else { return }
 
                 if Date().timeIntervalSince(self.lastActionTime) < 1.0, var b = best {
-                    if !self.activeIsBrowser {
+                    if !self.activeIsBrowser && !self.activeIsSystemNowPlaying {
                         b.parts[0] = self.desiredPlayingState ? "playing" : "paused"
                         best = b
                     }
                 } else if let b = best {
                     let reported = b.parts[0] == "playing"
-                    if !self.activeIsBrowser {
+                    if !self.activeIsBrowser && !self.activeIsSystemNowPlaying {
                         self.desiredPlayingState = reported
                         self.lastDispatchedState = reported
                     }
@@ -213,18 +364,47 @@ final class MediaController: ObservableObject {
 
 
     private func recompute() {
-        if let n = native {
+        if let nowPlaying = systemNowPlayingTrack,
+           nowPlaying.isPlaying,
+           native?.parts.first != "playing" {
+            let matchingBrowser = browserTrack.flatMap { browser in
+                nowPlaying.bundleIdentifier == BrowserMedia.bundleID(forApp: browser.app) ? browser : nil
+            }
+            applySystemNowPlaying(nowPlaying, browser: matchingBrowser)
+        } else if let n = native {
             activeIsBrowser = false
             applyNative(n)
         } else if let b = browserTrack {
             activeIsBrowser = true
-            applyBrowser(b)
+            if let nowPlaying = systemNowPlayingTrack,
+               !b.hasMediaSessionMetadata,
+               (nowPlaying.bundleIdentifier == nil || nowPlaying.bundleIdentifier == BrowserMedia.bundleID(forApp: b.app)) {
+                applySystemNowPlaying(nowPlaying, browser: b)
+            } else {
+                let browserBundleID = BrowserMedia.bundleID(forApp: b.app)
+                let matchingNowPlaying = systemNowPlayingTrack.flatMap { track in
+                    track.bundleIdentifier == browserBundleID ? track : nil
+                }
+                applyBrowser(b, artworkFallback: matchingNowPlaying)
+            }
+        } else if let systemNowPlayingTrack {
+            applySystemNowPlaying(systemNowPlayingTrack, browser: nil)
         } else {
+            activeIsSystemNowPlaying = false
             activeIsBrowser = false
             AudioVisualizer.shared.follow(bundleIdentifiers: [], isPlaying: false)
             title = ""; artist = ""; isPlaying = false; artwork = nil
             hasTrack = false; sourceLabel = ""; artworkURL = nil
             requestedMusicArtworkTrack = nil
+            lastFetchedTrack = ""
+            lastQueueFetchDate = .distantPast
+            previousQueueTracks = []
+            prefetchedUpcomingTracks = []
+            prefetchedMusicArtwork = [:]
+            prefetchedMusicQueueTrackKey = ""
+            prefetchedMusicQueueIsShuffled = false
+            artworkSkipArtwork = nil
+            queueTracks = []
             position = 0; duration = 0; positionDate = Date()
             lyrics.clear()
         }
@@ -236,6 +416,7 @@ final class MediaController: ObservableObject {
     }
 
     private func applyNative(_ n: (app: String, parts: [String])) {
+        activeIsSystemNowPlaying = false
         let p = n.parts
         hasTrack = true
         let newIsPlaying = p[0] == "playing"
@@ -258,18 +439,25 @@ final class MediaController: ObservableObject {
         let polledPos = Self.number(p, 4)
         duration = n.app == "Spotify" ? Self.number(p, 5) / 1000 : Self.number(p, 5)
         canShuffle = true
-        shuffleOn = p.count > 6 && p[6] == "true"
+        let reportedShuffle = p.count > 6 && p[6] == "true"
+        if n.app == "Music", reportedShuffle != shuffleOn {
+            prefetchedMusicQueueTrackKey = ""
+            lastQueueFetchDate = .distantPast
+        }
+        shuffleOn = reportedShuffle
         repeatOn = p.count > 7 && p[7] != "false" && p[7] != "off"
 
-        if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
-            fetchUpcomingQueue(title: newTitle, artist: newArtist, app: n.app)
+        let shouldUpdateLyrics = trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty
+        fetchUpcomingQueue(title: newTitle, artist: newArtist, app: n.app)
+        if shouldUpdateLyrics {
             lyrics.update(title: newTitle, artist: newArtist, isAppleMusic: n.app == "Music")
         }
 
         updatePosition(polled: polledPos, isPlaying: newIsPlaying, trackChanged: trackChanged)
     }
 
-    private func applyBrowser(_ b: BrowserTrack) {
+    private func applyBrowser(_ b: BrowserTrack, artworkFallback: SystemNowPlayingTrack? = nil) {
+        activeIsSystemNowPlaying = false
         let trackChanged = b.service != sourceLabel || b.title != title || b.artist != artist
         AudioVisualizer.shared.follow(
             bundleIdentifiers: BrowserMedia.bundleID(forApp: b.app).map { [$0] } ?? [],
@@ -280,47 +468,198 @@ final class MediaController: ObservableObject {
         setIfChanged(\.title, b.title)
         setIfChanged(\.artist, b.artist)
         requestedMusicArtworkTrack = nil
-        loadArtwork(b.artworkURL)
+        if b.artworkURL.isEmpty, let fallbackArtwork = artworkFallback?.artwork {
+            artworkTask?.cancel()
+            artworkURL = nil
+            if artwork !== fallbackArtwork {
+                withAnimation(.easeOut(duration: 0.12)) { artwork = fallbackArtwork }
+            }
+        } else {
+            loadArtwork(b.artworkURL)
+        }
         duration = b.duration
         canShuffle = false
         shuffleOn = false
         repeatOn = b.loop
 
-        if trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty {
-            fetchUpcomingQueue(title: b.title, artist: b.artist, app: b.service)
+        let shouldUpdateLyrics = trackChanged || queueTracks.isEmpty || lastFetchedTrack.isEmpty
+        fetchUpcomingQueue(title: b.title, artist: b.artist, app: b.service)
+        if shouldUpdateLyrics {
             lyrics.update(title: b.title, artist: b.artist, isAppleMusic: false)
         }
 
         updatePosition(polled: b.position, isPlaying: b.playing, trackChanged: trackChanged)
     }
 
+    private func applySystemNowPlaying(_ track: SystemNowPlayingTrack, browser: BrowserTrack?) {
+        activeIsSystemNowPlaying = true
+        activeIsBrowser = false
+        hasTrack = true
+
+        let source = browser?.service ?? Self.nowPlayingSourceName(track.bundleIdentifier)
+        let displayArtist = track.artist.isEmpty ? (browser?.artist ?? "") : track.artist
+        let trackChanged = source != sourceLabel || track.title != title || displayArtist != artist
+        if trackChanged {
+            desiredPlayingState = track.isPlaying
+            lastDispatchedState = track.isPlaying
+            lastDispatchedTime = Date()
+        }
+        AudioVisualizer.shared.follow(
+            bundleIdentifiers: track.bundleIdentifier.map { [$0] } ?? [],
+            isPlaying: track.isPlaying
+        )
+
+        sourceLabel = source
+        setIfChanged(\.title, track.title)
+        setIfChanged(\.artist, displayArtist)
+        requestedMusicArtworkTrack = nil
+        artworkTask?.cancel()
+        artworkTask = nil
+        artworkURL = nil
+        if let image = track.artwork {
+            if artwork !== image {
+                withAnimation(.easeOut(duration: 0.12)) { artwork = image }
+            }
+        } else if let browser, !browser.artworkURL.isEmpty {
+            loadArtwork(browser.artworkURL)
+        } else if trackChanged {
+            artwork = nil
+        }
+
+        duration = track.duration
+        canShuffle = false
+        if track.bundleIdentifier == "com.apple.Music" {
+            let queueKey = "Music::\(track.title)::\(displayArtist)"
+            if let native, native.app == "Music", native.parts.count > 6 {
+                shuffleOn = native.parts[6] == "true"
+            } else if prefetchedMusicQueueTrackKey == queueKey {
+                shuffleOn = prefetchedMusicQueueIsShuffled
+            } else {
+                shuffleOn = false
+            }
+        } else {
+            shuffleOn = false
+        }
+        repeatOn = false
+        if track.bundleIdentifier == "com.apple.Music" {
+            queueSupported = true
+            fetchUpcomingQueue(title: track.title, artist: displayArtist, app: "Music")
+        } else {
+            queueSupported = false
+            queueTracks = []
+            lastFetchedTrack = ""
+            previousQueueTracks = []
+            prefetchedUpcomingTracks = []
+            prefetchedMusicArtwork = [:]
+            prefetchedMusicQueueTrackKey = ""
+            prefetchedMusicQueueIsShuffled = false
+        }
+        if trackChanged {
+            lyrics.update(
+                title: track.title,
+                artist: displayArtist,
+                isAppleMusic: track.bundleIdentifier == "com.apple.Music"
+            )
+        }
+        updatePosition(polled: track.elapsedTime, isPlaying: track.isPlaying, trackChanged: trackChanged)
+    }
+
+    private static func nowPlayingSourceName(_ bundleIdentifier: String?) -> String {
+        guard let bundleIdentifier else { return "Now Playing" }
+        switch bundleIdentifier {
+        case "com.apple.Music": return "Music"
+        case "com.spotify.client": return "Spotify"
+        case "com.apple.Safari": return "Safari"
+        case "com.google.Chrome": return "Chrome"
+        case "com.brave.Browser": return "Brave"
+        case "company.thebrowser.Browser": return "Arc"
+        default:
+            return bundleIdentifier.split(separator: ".").last.map(String.init)?.capitalized ?? "Now Playing"
+        }
+    }
+
+    private static func nativePlayerName(for bundleIdentifier: String?) -> String? {
+        switch bundleIdentifier {
+        case "com.apple.Music": return "Music"
+        case "com.spotify.client": return "Spotify"
+        default: return nil
+        }
+    }
+
     private func fetchUpcomingQueue(title: String, artist: String, app: String) {
         let key = "\(app)::\(title)::\(artist)"
-        guard key != lastFetchedTrack, !title.isEmpty else { return }
+        guard !title.isEmpty else { return }
+        let sameTrack = key == lastFetchedTrack
+        guard !sameTrack || Date().timeIntervalSince(lastQueueFetchDate) >= 15 else { return }
         lastFetchedTrack = key
+        lastQueueFetchDate = Date()
         queueSupported = app == "Music"
         guard app == "Music" else {
             queueTracks = []
+            previousQueueTracks = []
+            prefetchedUpcomingTracks = []
+            prefetchedMusicArtwork = [:]
+            prefetchedMusicQueueTrackKey = ""
+            prefetchedMusicQueueIsShuffled = false
             return
         }
+        prefetchedMusicQueueTrackKey = ""
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let tracks = Self.queryMusicQueue() ?? []
+            let snapshot = Self.queryMusicQueue()
             DispatchQueue.main.async {
                 guard let self, self.lastFetchedTrack == key else { return }
-                self.queueTracks = tracks.map { t in
-                    QueueTrack(id: t.id, title: t.title, artist: t.artist, artwork: t.artwork,
+                guard let snapshot else {
+                    self.queueTracks = []
+                    self.previousQueueTracks = []
+                    self.prefetchedUpcomingTracks = []
+                    self.prefetchedMusicArtwork = [:]
+                    self.prefetchedMusicQueueIsShuffled = false
+                    return
+                }
+
+                self.previousQueueTracks = snapshot.previous
+                self.prefetchedUpcomingTracks = snapshot.upcoming
+                self.prefetchedMusicQueueTrackKey = key
+                self.prefetchedMusicQueueIsShuffled = snapshot.shuffleEnabled
+                if self.activeIsSystemNowPlaying,
+                   self.systemNowPlayingTrack?.bundleIdentifier == "com.apple.Music" {
+                    self.shuffleOn = snapshot.shuffleEnabled
+                }
+                self.queueTracks = snapshot.upcoming.map { track in
+                    QueueTrack(id: track.id, title: track.title, artist: track.artist, artwork: track.artwork,
                                artworkURL: nil, symbol: "music.note", accent: Color.white.opacity(0.12))
+                }
+                var prefetched: [String: NSImage] = [:]
+                var prefetchedTracks = snapshot.previous
+                if let current = snapshot.current { prefetchedTracks.append(current) }
+                prefetchedTracks.append(contentsOf: snapshot.upcoming)
+                for track in prefetchedTracks {
+                    if let image = track.artwork {
+                        prefetched[Self.musicArtworkKey(track.title, track.artist)] = image
+                    }
+                }
+                self.prefetchedMusicArtwork = prefetched
+
+                if let current = snapshot.current,
+                   current.title == self.title,
+                   current.artist == self.artist,
+                   let image = current.artwork,
+                   self.artwork == nil {
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        self.artwork = image
+                    }
                 }
             }
         }
     }
 
-    nonisolated private static func queryMusicQueue() -> [(id: String, title: String, artist: String, artwork: NSImage?)]? {
+    nonisolated private static func queryMusicQueue() -> MusicQueueSnapshot? {
         let script = """
         tell application "Music"
             if player state is stopped then return {}
             set results to {}
             try
+                set end of results to {"shuffle", shuffle enabled as string}
                 set pl to current playlist
                 set curID to persistent ID of current track
                 set allIDs to persistent ID of every track of pl
@@ -332,7 +671,24 @@ final class MediaController: ObservableObject {
                     end if
                 end repeat
                 if curIdx is 0 then return {}
-                set lastIdx to curIdx + 4
+                set trk to track curIdx of pl
+                set art to missing value
+                try
+                    set art to raw data of artwork 1 of trk
+                end try
+                set end of results to {"current", persistent ID of trk, name of trk, artist of trk, art}
+
+                set firstPreviousIdx to curIdx - 2
+                if firstPreviousIdx < 1 then set firstPreviousIdx to 1
+                repeat with i from firstPreviousIdx to (curIdx - 1)
+                    set trk to track i of pl
+                    set art to missing value
+                    try
+                        set art to raw data of artwork 1 of trk
+                    end try
+                    set end of results to {"previous", persistent ID of trk, name of trk, artist of trk, art}
+                end repeat
+                set lastIdx to curIdx + 2
                 if lastIdx > (count of allIDs) then set lastIdx to count of allIDs
                 repeat with i from (curIdx + 1) to lastIdx
                     set trk to track i of pl
@@ -340,7 +696,7 @@ final class MediaController: ObservableObject {
                     try
                         set art to raw data of artwork 1 of trk
                     end try
-                    set end of results to {persistent ID of trk, name of trk, artist of trk, art}
+                    set end of results to {"upcoming", persistent ID of trk, name of trk, artist of trk, art}
                 end repeat
             end try
             return results
@@ -349,17 +705,64 @@ final class MediaController: ObservableObject {
         var err: NSDictionary?
         guard let list = NSAppleScript(source: script)?.executeAndReturnError(&err), err == nil,
               list.numberOfItems > 0 else { return nil }
-        var out: [(id: String, title: String, artist: String, artwork: NSImage?)] = []
+        var previous: [MusicArtworkTrack] = []
+        var current: MusicArtworkTrack?
+        var upcoming: [MusicArtworkTrack] = []
+        var shuffleEnabled = false
         for i in 1...list.numberOfItems {
-            guard let row = list.atIndex(i), row.numberOfItems >= 3,
-                  let id = row.atIndex(1)?.stringValue,
-                  let name = row.atIndex(2)?.stringValue else { continue }
-            let artist = row.atIndex(3)?.stringValue ?? ""
+            guard let row = list.atIndex(i),
+                  let kind = row.atIndex(1)?.stringValue else { continue }
+            if kind == "shuffle" {
+                shuffleEnabled = row.atIndex(2)?.stringValue == "true"
+                continue
+            }
+            guard row.numberOfItems >= 4,
+                  let id = row.atIndex(2)?.stringValue,
+                  let name = row.atIndex(3)?.stringValue else { continue }
+            let artist = row.atIndex(4)?.stringValue ?? ""
             var image: NSImage?
-            if row.numberOfItems >= 4, let d = row.atIndex(4)?.data, !d.isEmpty { image = NSImage(data: d) }
-            out.append((id: id, title: name, artist: artist, artwork: image))
+            if row.numberOfItems >= 5, let data = row.atIndex(5)?.data, !data.isEmpty {
+                image = musicArtworkImage(id: id, data: data)
+            }
+            let track = MusicArtworkTrack(id: id, title: name, artist: artist, artwork: image)
+            if kind == "previous" { previous.append(track) }
+            else if kind == "current" { current = track }
+            else if kind == "upcoming" { upcoming.append(track) }
         }
-        return out
+        return MusicQueueSnapshot(
+            previous: previous,
+            current: current,
+            upcoming: upcoming,
+            shuffleEnabled: shuffleEnabled
+        )
+    }
+
+    nonisolated private static func decodeArtworkImage(_ data: Data) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return NSImage(data: data)
+        }
+        let options: CFDictionary = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 512,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
+            return NSImage(data: data)
+        }
+        return NSImage(
+            cgImage: image,
+            size: NSSize(width: CGFloat(image.width), height: CGFloat(image.height))
+        )
+    }
+
+    nonisolated private static func musicArtworkImage(id: String, data: Data) -> NSImage? {
+        let key = id as NSString
+        if let cached = musicArtworkCache.object(forKey: key) { return cached }
+        guard let image = decodeArtworkImage(data) else { return nil }
+        let cost = Int(image.size.width * image.size.height * 4)
+        musicArtworkCache.setObject(image, forKey: key, cost: cost)
+        return image
     }
 
     private func updatePosition(polled: Double, isPlaying newIsPlaying: Bool, trackChanged: Bool) {
@@ -503,6 +906,10 @@ final class MediaController: ObservableObject {
         return url
     }
 
+    private static func musicArtworkKey(_ title: String, _ artist: String) -> String {
+        "\(title)\u{1F}\(artist)"
+    }
+
     private func loadArtwork(_ rawURL: String) {
         let url = Self.normalizeArtworkURL(rawURL)
         guard url != artworkURL else { return }
@@ -526,7 +933,7 @@ final class MediaController: ObservableObject {
         var request = URLRequest(url: u)
         request.cachePolicy = .returnCacheDataElseLoad
         let task = Self.artworkSession.dataTask(with: request) { [weak self] data, _, _ in
-            guard let data, let img = NSImage(data: data) else {
+            guard let data, let img = Self.decodeArtworkImage(data) else {
                 DispatchQueue.main.async {
                     guard let self, self.artworkURL == url else { return }
                     withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) {
@@ -549,15 +956,23 @@ final class MediaController: ObservableObject {
     }
 
     private func loadMusicArtwork(title: String, artist: String) {
-        let key = "\(title)::\(artist)"
+        let key = Self.musicArtworkKey(title, artist)
         guard key != requestedMusicArtworkTrack else { return }
         requestedMusicArtworkTrack = key
         artworkTask?.cancel()
         artworkURL = nil
+
+        if let cached = prefetchedMusicArtwork[key] {
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) {
+                artwork = cached
+            }
+            return
+        }
+
         artwork = nil
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let image = Self.queryMusicArtwork().flatMap { NSImage(data: $0) }
+            let image = Self.queryMusicArtwork().flatMap { Self.decodeArtworkImage($0) }
             DispatchQueue.main.async {
                 guard let self,
                       self.sourceLabel == "Music",
@@ -616,6 +1031,7 @@ final class MediaController: ObservableObject {
         let item = DispatchWorkItem { [weak self] in
             self?.refreshNative()
             self?.refreshBrowser()
+            self?.refreshSystemNowPlaying()
         }
         refreshWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
@@ -625,10 +1041,21 @@ final class MediaController: ObservableObject {
         let n = native
         let b = browserTrack
         let useBrowser = activeIsBrowser
+        let useSystemNowPlaying = activeIsSystemNowPlaying
+        let systemBundleID = systemNowPlayingTrack?.bundleIdentifier
+        let systemNativeApp = Self.nativePlayerName(for: systemBundleID)
         controlQueue.async { [weak self] in
             guard let self else { return }
             if useBrowser, let b, let action {
                 BrowserMedia.command(action, on: b)
+            } else if useSystemNowPlaying {
+                if let b, let action,
+                   (systemBundleID == nil || systemBundleID == BrowserMedia.bundleID(forApp: b.app)) {
+                    BrowserMedia.command(action, on: b)
+                } else if let app = systemNativeApp {
+                    var error: NSDictionary?
+                    NSAppleScript(source: script(app))?.executeAndReturnError(&error)
+                }
             } else if let n {
                 var error: NSDictionary?
                 NSAppleScript(source: script(n.app))?.executeAndReturnError(&error)
@@ -671,6 +1098,8 @@ final class MediaController: ObservableObject {
             }
             pendingPlayPauseWorkItem = item
             controlQueue.async(execute: item)
+        } else if activeIsSystemNowPlaying {
+            Self.sendMediaRemoteCommand(target ? 0 : 1)
         } else if let n = native {
             controlQueue.async {
                 var error: NSDictionary?
@@ -695,7 +1124,7 @@ final class MediaController: ObservableObject {
                 b.position = nowPos
                 browserTrack = b
             }
-        } else {
+        } else if !activeIsSystemNowPlaying {
             if var n = native {
                 n.parts[0] = target ? "playing" : "paused"
                 native = n
@@ -725,13 +1154,14 @@ final class MediaController: ObservableObject {
     }
 
     func next() {
+        announceArtworkSkip(.next)
         position = 0
         positionDate = Date()
         lastActionTime = Date()
         queryEpoch += 1
         if activeIsBrowser, let b = browserTrack {
             controlQueue.async { BrowserMedia.command(.next, on: b) }
-        } else if let n = native {
+        } else if !activeIsSystemNowPlaying, let n = native {
             controlQueue.async {
                 var error: NSDictionary?
                 NSAppleScript(source: "tell application \"\(n.app)\" to next track")?.executeAndReturnError(&error)
@@ -743,13 +1173,14 @@ final class MediaController: ObservableObject {
     }
 
     func previous() {
+        announceArtworkSkip(.previous)
         position = 0
         positionDate = Date()
         lastActionTime = Date()
         queryEpoch += 1
         if activeIsBrowser, let b = browserTrack {
             controlQueue.async { BrowserMedia.command(.previous, on: b) }
-        } else if let n = native {
+        } else if !activeIsSystemNowPlaying, let n = native {
             controlQueue.async {
                 var error: NSDictionary?
                 NSAppleScript(source: "tell application \"\(n.app)\" to previous track")?.executeAndReturnError(&error)
@@ -758,6 +1189,64 @@ final class MediaController: ObservableObject {
             Self.sendMediaRemoteCommand(5)
         }
         scheduleRefresh(delay: 0.35)
+    }
+
+    private func announceArtworkSkip(_ direction: NotchSwipeDirection) {
+        guard hasTrack else { return }
+        artworkSkipWorkItem?.cancel()
+        artworkSkipWorkItem = nil
+
+        let adjacentTrack: MusicArtworkTrack?
+        let queueKey = "Music::\(title)::\(artist)"
+        if sourceLabel == "Music",
+           prefetchedMusicQueueTrackKey == queueKey,
+           !shuffleOn,
+           !prefetchedMusicQueueIsShuffled {
+            switch direction {
+            case .previous:
+                adjacentTrack = previousQueueTracks.last
+                if !previousQueueTracks.isEmpty { previousQueueTracks.removeLast() }
+            case .next:
+                adjacentTrack = prefetchedUpcomingTracks.first
+                if !prefetchedUpcomingTracks.isEmpty { prefetchedUpcomingTracks.removeFirst() }
+            }
+        } else {
+            adjacentTrack = nil
+        }
+
+        let cachedArtwork = adjacentTrack.flatMap { track in
+            track.artwork ?? prefetchedMusicArtwork[Self.musicArtworkKey(track.title, track.artist)]
+        }
+        var artworkTransaction = Transaction()
+        artworkTransaction.disablesAnimations = true
+        withTransaction(artworkTransaction) {
+            artworkSkipArtwork = cachedArtwork
+        }
+
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) {
+            artworkSkipDirection = direction
+            artworkSkipAnimationID += 1
+        }
+
+        guard let cachedArtwork else {
+            return
+        }
+
+        let skipID = artworkSkipAnimationID
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.artworkSkipAnimationID == skipID,
+                  self.hasTrack,
+                  self.sourceLabel == "Music" else { return }
+            self.artworkTask?.cancel()
+            self.artworkTask = nil
+            self.artworkURL = nil
+            withAnimation(.easeInOut(duration: 0.16)) {
+                self.artwork = cachedArtwork
+            }
+        }
+        artworkSkipWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
     }
 
     func seek(to seconds: Double) {
@@ -771,6 +1260,10 @@ final class MediaController: ObservableObject {
     func toggleShuffle() {
         guard canShuffle else { return }
         shuffleOn.toggle()
+        if sourceLabel == "Music" {
+            prefetchedMusicQueueTrackKey = ""
+            lastQueueFetchDate = .distantPast
+        }
         control(native: { app in
             app == "Spotify" ? "tell application \"Spotify\" to set shuffling to not shuffling"
                              : "tell application \"Music\" to set shuffle enabled to not shuffle enabled"

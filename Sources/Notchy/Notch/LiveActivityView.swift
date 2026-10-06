@@ -23,7 +23,15 @@ struct LiveActivityView: View {
             leadingWidth: side,
             trailingWidth: side
         ) {
-            ArtworkView(image: media.artwork, size: 20, cornerRadius: 5, namespace: albumArtNamespace)
+            ArtworkView(
+                image: media.artwork,
+                size: 20,
+                cornerRadius: 5,
+                namespace: albumArtNamespace,
+                skipAnimationID: media.artworkSkipAnimationID,
+                skipDirection: media.artworkSkipDirection,
+                skipArtwork: media.artworkSkipArtwork
+            )
         } trailing: {
             ZStack {
                 if state.flashDirection == .previous {
@@ -48,8 +56,6 @@ struct LiveActivityView: View {
             .animation(.spring(response: 0.24, dampingFraction: 0.72), value: state.flashDirection)
         }
         .foregroundStyle(.white)
-        .offset(x: state.swipeOffset * 0.35)
-        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
     }
 }
 

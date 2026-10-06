@@ -72,7 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var darwinTokens: [Int32] = []
     private var swipeAccumulator: CGFloat = 0
     private var swipeTriggered = false
+    private var swipeGestureClaimed = false
+    private var swipeStartedInNotch = false
     private var swipeResetWork: DispatchWorkItem?
+    private var lyricsScrollGestureIgnored = false
+    private var moduleSwipeAccumulator: CGFloat = 0
+    private var moduleSwipeTriggered = false
+    private var moduleSwipeClaimed = false
+    private var moduleSwipeResetWork: DispatchWorkItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Pref.registerDefaults()
@@ -143,7 +150,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makePanel(state: NotchState, on screen: NSScreen) -> NotchPanel {
         let pad = NotchState.panelPadding
-        let size = CGSize(width: NotchState.fullExpandedSize.width + pad * 2, height: NotchState.fullExpandedSize.height + pad)
+        let size = CGSize(
+            width: NotchState.fullExpandedSize.width + pad * 2 + ModuleNavigationMetrics.panelWidthAllowance,
+            height: NotchState.fullExpandedSize.height + pad
+        )
         let panel = NotchPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -576,7 +586,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if Date().timeIntervalSince(state.lyricsClosedAt) < 1.0 {
             size.width = max(size.width, NotchState.lyricsExpandedSize.width)
         }
-        return point.x >= frame.midX - size.width / 2 - 14 && point.x <= frame.midX + size.width / 2 + 14
+        let navigationExtension = NotchTab.available.count > 1 ? ModuleNavigationMetrics.trailingHitExtension : 0
+        return point.x >= frame.midX - size.width / 2 - 14
+            && point.x <= frame.midX + size.width / 2 + 14 + navigationExtension
             && point.y >= frame.maxY - size.height - 14 && point.y <= frame.maxY + 4
     }
 
@@ -621,7 +633,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else if Date().timeIntervalSince(state.lyricsClosedAt) < 1.0 {
                 s.width = max(s.width, NotchState.lyricsExpandedSize.width)
             }
-            return loc.x >= f.midX - s.width / 2 - 14 && loc.x <= f.midX + s.width / 2 + 14
+            let navigationExtension = NotchTab.available.count > 1 ? ModuleNavigationMetrics.trailingHitExtension : 0
+            return loc.x >= f.midX - s.width / 2 - 14
+                && loc.x <= f.midX + s.width / 2 + 14 + navigationExtension
                 && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
         } else {
             let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
@@ -633,90 +647,167 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @discardableResult
     private func handleScrollWheel(_ event: NSEvent) -> Bool {
-        guard Pref.bool(Pref.media) else { return false }
         selectDisplayForPointer()
-        guard media.hasTrack || state.tab == .media else { return false }
-        if state.expanded && state.tab != .media { return false }
-
         let loc = NSEvent.mouseLocation
-        guard isMouseInNotch(loc) else {
+        let isOverLyricsList = state.expanded && state.showLyrics && state.tab == .media && state.hoveringLyrics
+
+        if event.phase.contains(.began) {
+            lyricsScrollGestureIgnored = false
             resetSwipeGesture()
+            resetModuleSwipeGesture()
+            swipeStartedInNotch = !isOverLyricsList && isMouseInNotch(loc)
+        }
+
+        if isOverLyricsList {
+            if event.phase != [] || event.momentumPhase != [] {
+                lyricsScrollGestureIgnored = true
+            }
+            resetSwipeGesture()
+            resetModuleSwipeGesture()
+            if !lyricsScrollGestureIgnored { return false }
+        }
+
+        if lyricsScrollGestureIgnored {
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled)
+                || event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                lyricsScrollGestureIgnored = false
+            }
             return false
         }
 
-        guard event.hasPreciseScrollingDeltas else { return false }
-
         if event.momentumPhase != [] {
-            if state.swipeOffset != 0 || state.activeSwipeDirection != nil {
-                withAnimation(NotchAnimation.pressSettle) {
-                    state.swipeOffset = 0
-                    state.activeSwipeDirection = nil
+            if moduleSwipeClaimed {
+                if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                    resetModuleSwipeGesture()
+                } else {
+                    scheduleModuleSwipeReset()
                 }
+                return true
             }
-            return false
+            guard swipeGestureClaimed else { return false }
+            if event.momentumPhase.contains(.ended) || event.momentumPhase.contains(.cancelled) {
+                resetSwipeGesture()
+            } else {
+                scheduleSwipeReset()
+            }
+            return true
         }
 
         let rawDx = event.scrollingDeltaX
         let rawDy = event.scrollingDeltaY
+        if state.expanded,
+           NotchTab.available.count > 1,
+           event.hasPreciseScrollingDeltas,
+           (moduleSwipeClaimed || swipeStartedInNotch || isMouseInNotch(loc)),
+           (moduleSwipeClaimed || abs(rawDy) > abs(rawDx)) {
+            moduleSwipeClaimed = true
+            cancelPendingExpansion()
 
-        if event.phase == .began {
-            swipeAccumulator = 0
-            swipeTriggered = false
-            swipeResetWork?.cancel()
-            swipeResetWork = nil
+            let physicalDy = event.isDirectionInvertedFromDevice ? rawDy : -rawDy
+            moduleSwipeAccumulator += physicalDy
+            if !moduleSwipeTriggered {
+                if moduleSwipeAccumulator <= -36 {
+                    moduleSwipeTriggered = true
+                    moveModule(by: 1)
+                } else if moduleSwipeAccumulator >= 36 {
+                    moduleSwipeTriggered = true
+                    moveModule(by: -1)
+                }
+            }
+            scheduleModuleSwipeReset()
+            return true
         }
 
-        guard abs(rawDx) > abs(rawDy) || abs(swipeAccumulator) > 5 else {
+        guard Pref.bool(Pref.media) else {
+            resetSwipeGesture()
             return false
         }
 
+        guard media.hasTrack || state.tab == .media else {
+            resetSwipeGesture()
+            return false
+        }
+        if state.expanded && state.tab != .media {
+            resetSwipeGesture()
+            return false
+        }
+        guard event.hasPreciseScrollingDeltas else {
+            if swipeGestureClaimed {
+                scheduleSwipeReset()
+                return true
+            }
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                resetSwipeGesture()
+            }
+            return false
+        }
+        guard swipeGestureClaimed || swipeStartedInNotch || isMouseInNotch(loc) else {
+            resetSwipeGesture()
+            return false
+        }
+
+        guard swipeGestureClaimed || abs(rawDx) > abs(rawDy) || abs(swipeAccumulator) > 5 else {
+            if event.phase.contains(.ended) || event.phase.contains(.cancelled) {
+                resetSwipeGesture()
+            }
+            return false
+        }
+
+        swipeGestureClaimed = true
         cancelPendingExpansion()
 
+        // Normalize natural scrolling so the delta follows the finger's direction.
         let physicalDx = event.isDirectionInvertedFromDevice ? rawDx : -rawDx
         swipeAccumulator += physicalDx
 
-        let offset = min(max(swipeAccumulator * 0.35, -24), 24)
-        withAnimation(NotchAnimation.drag) {
-            state.swipeOffset = offset
-        }
-
-        if swipeAccumulator < -15 {
-            withAnimation(NotchAnimation.hover) {
-                state.activeSwipeDirection = .previous
-            }
-        } else if swipeAccumulator > 15 {
-            withAnimation(NotchAnimation.hover) {
-                state.activeSwipeDirection = .next
-            }
-        } else {
-            withAnimation(NotchAnimation.hover) {
-                state.activeSwipeDirection = nil
-            }
-        }
-
         let threshold: CGFloat = 36
         if !swipeTriggered {
+            // A leftward swipe advances; a rightward swipe goes back.
             if swipeAccumulator <= -threshold {
                 swipeTriggered = true
-                triggerSwipe(.previous)
+                triggerSwipe(.next)
             } else if swipeAccumulator >= threshold {
                 swipeTriggered = true
-                triggerSwipe(.next)
+                triggerSwipe(.previous)
             }
         }
 
-        if event.phase == .ended || event.phase == .cancelled {
-            resetSwipeGesture()
-        } else {
-            swipeResetWork?.cancel()
-            let work = DispatchWorkItem { [weak self] in
-                self?.resetSwipeGesture()
-            }
-            swipeResetWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
-        }
+        scheduleSwipeReset()
 
         return true
+    }
+
+    private func moveModule(by offset: Int) {
+        guard state.moveToAdjacentTab(by: offset) else { return }
+        if Pref.bool(Pref.hapticFeedback) {
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+        }
+    }
+
+    private func scheduleModuleSwipeReset() {
+        moduleSwipeResetWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.resetModuleSwipeGesture()
+        }
+        moduleSwipeResetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func resetModuleSwipeGesture() {
+        moduleSwipeResetWork?.cancel()
+        moduleSwipeResetWork = nil
+        moduleSwipeAccumulator = 0
+        moduleSwipeTriggered = false
+        moduleSwipeClaimed = false
+    }
+
+    private func scheduleSwipeReset() {
+        swipeResetWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.resetSwipeGesture()
+        }
+        swipeResetWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
     }
 
     private func selectDisplayForPointer() {
@@ -757,11 +848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         swipeResetWork = nil
         swipeAccumulator = 0
         swipeTriggered = false
-        if state.swipeOffset != 0 || state.activeSwipeDirection != nil {
-            withAnimation(NotchAnimation.pressSettle) {
-                state.swipeOffset = 0
-                state.activeSwipeDirection = nil
-            }
-        }
+        swipeGestureClaimed = false
+        swipeStartedInNotch = false
     }
 }

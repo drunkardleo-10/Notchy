@@ -10,6 +10,7 @@ struct BrowserTrack: Equatable {
     var artworkURL: String
     var service: String
     var preciseState = true
+    var hasMediaSessionMetadata = false
     var position: Double = 0
     var duration: Double = 0
     var loop = false
@@ -51,7 +52,7 @@ enum BrowserMedia {
     private static let urlCondition = ["youtube.com/watch", "music.youtube.com", "youtube.com/shorts", "soundcloud.com", "open.spotify.com"]
         .map { "(u contains \"\($0)\")" }.joined(separator: " or ")
 
-    private static let probeJS = "(function(){var v=document.querySelector('video,audio');var ms=navigator.mediaSession;var p=ms&&ms.playbackState==='playing'?true:(ms&&ms.playbackState==='paused'?false:(v?!v.paused:false));var m=ms&&ms.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}return JSON.stringify({p:p,t:m?m.title:'',a:m?m.artist:'',i:a,c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false})})()"
+    private static let probeJS = "(function(){var v=document.querySelector('video,audio');var ms=navigator.mediaSession;var p=ms&&ms.playbackState==='playing'?true:(ms&&ms.playbackState==='paused'?false:(v?!v.paused:false));var m=ms&&ms.metadata;var a='';if(m&&m.artwork&&m.artwork.length){a=m.artwork[m.artwork.length-1].src}return JSON.stringify({p:p,t:m?m.title:'',a:m?m.artist:'',i:a,h:!!(m&&m.title),c:v?v.currentTime:0,d:(v&&isFinite(v.duration))?v.duration:0,l:v?v.loop:false})})()"
 
     static func bundleID(forApp name: String) -> String? { browsers.first { $0.name == name }?.bundleID }
 
@@ -177,6 +178,7 @@ enum BrowserMedia {
                             artist: (meta["a"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? service,
                             playing: jsWorked ? (meta["p"] as? Bool ?? false) : audioPlaying,
                             artworkURL: artwork, service: service, preciseState: jsWorked,
+                            hasMediaSessionMetadata: meta["h"] as? Bool ?? false,
                             position: (meta["c"] as? Double) ?? 0, duration: (meta["d"] as? Double) ?? 0,
                             loop: (meta["l"] as? Bool) ?? false)
     }

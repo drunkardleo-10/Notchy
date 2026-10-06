@@ -49,13 +49,18 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .tools: Pref.tools
         }
     }
+
+    static var available: [NotchTab] {
+        let enabled = allCases.filter { Pref.bool($0.prefKey) }
+        return enabled.isEmpty ? [.media] : enabled
+    }
 }
 
 @MainActor
 final class NotchState: ObservableObject {
     static let compactExpandedSize = CGSize(width: 480, height: 186)
-    static let lyricsExpandedSize = CGSize(width: 590, height: 186)
     static let queueExpandedSize = CGSize(width: 820, height: 186)
+    static let lyricsExpandedSize = queueExpandedSize
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let panelPadding: CGFloat = 24
 
@@ -98,26 +103,54 @@ final class NotchState: ObservableObject {
 
     @Published var expanded = false
     @Published var hoveringNotch = false
+    @Published var hoveringLyrics = false
     @Published var tab: NotchTab = .media
+    @Published var tabNavigationDirection = 1
     @Published var dropTargeted = false
     @Published var hud: HUDEvent?
     @Published var notchSize = CGSize(width: 190, height: 32)
-    @Published var swipeOffset: CGFloat = 0
-    @Published var activeSwipeDirection: NotchSwipeDirection?
+    @Published var previousSkipAnimationID = 0
+    @Published var nextSkipAnimationID = 0
     @Published var flashDirection: NotchSwipeDirection?
     private var flashWork: DispatchWorkItem?
 
+    func selectTab(_ tab: NotchTab) {
+        let availableTabs = NotchTab.available
+        guard availableTabs.contains(tab) else { return }
+        let currentIndex = availableTabs.firstIndex(of: self.tab) ?? 0
+        guard let targetIndex = availableTabs.firstIndex(of: tab), targetIndex != currentIndex else { return }
+        tabNavigationDirection = targetIndex > currentIndex ? 1 : -1
+        withAnimation(NotchAnimation.tabSelect) {
+            self.tab = tab
+        }
+    }
+
+    @discardableResult
+    func moveToAdjacentTab(by offset: Int) -> Bool {
+        let availableTabs = NotchTab.available
+        guard offset != 0, availableTabs.count > 1 else { return false }
+        let currentIndex = availableTabs.firstIndex(of: tab) ?? 0
+        let targetIndex = currentIndex + offset
+        guard availableTabs.indices.contains(targetIndex) else { return false }
+        selectTab(availableTabs[targetIndex])
+        return true
+    }
+
+    func animateSkip(_ direction: NotchSwipeDirection) {
+        switch direction {
+        case .previous:
+            previousSkipAnimationID += 1
+        case .next:
+            nextSkipAnimationID += 1
+        }
+    }
+
     func flashSwipe(_ direction: NotchSwipeDirection) {
         flashWork?.cancel()
+        animateSkip(direction)
         flashDirection = direction
-        withAnimation(.spring(response: 0.22, dampingFraction: 0.60)) {
-            swipeOffset = direction == .previous ? -14 : 14
-        }
         let work = DispatchWorkItem { [weak self] in
-            withAnimation(NotchAnimation.pressSettle) {
-                self?.flashDirection = nil
-                self?.swipeOffset = 0
-            }
+            self?.flashDirection = nil
         }
         flashWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)

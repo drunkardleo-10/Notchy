@@ -73,8 +73,7 @@ struct NotchView: View {
     }
 
     private var tabs: [NotchTab] {
-        let active = NotchTab.allCases.filter { UserDefaults.standard.bool(forKey: $0.prefKey) }
-        return active.isEmpty ? [.media] : active
+        NotchTab.available
     }
 
     private var activeTab: NotchTab {
@@ -246,6 +245,23 @@ struct NotchView: View {
             .clipShape(shape)
             .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
             .offset(x: collapsedHorizontalOffset)
+            .overlay(alignment: .trailing) {
+                if tabs.count > 1 {
+                    ModuleNavigationPill(tabs: tabs, selection: activeTab, onSelect: state.selectTab)
+                        .blur(radius: state.expanded ? 0 : 10)
+                        .opacity(state.expanded ? 1 : 0)
+                        .scaleEffect(state.expanded ? 1 : 0.84)
+                        .offset(
+                            x: ModuleNavigationMetrics.width
+                                + ModuleNavigationMetrics.gap
+                                - (state.expanded ? 0 : ModuleNavigationMetrics.openingTravel)
+                        )
+                        .animation(expansionAnimation, value: state.expanded)
+                        .allowsHitTesting(state.expanded)
+                        .accessibilityHidden(!state.expanded)
+                        .zIndex(2)
+                }
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(expansionAnimation, value: state.expanded)
@@ -312,7 +328,11 @@ struct NotchView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .animation(nil, value: activeTab)
+            .transition(.asymmetric(
+                insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
+                removal: .move(edge: state.tabNavigationDirection > 0 ? .top : .bottom).combined(with: .opacity)
+            ))
+            .animation(NotchAnimation.tabSelect, value: activeTab)
         }
         .padding(.bottom, isCompact ? 18 : 20)
         .foregroundStyle(.white)
@@ -471,22 +491,92 @@ struct ArtworkView: View {
     let size: CGFloat
     let cornerRadius: CGFloat
     var namespace: Namespace.ID? = nil
+    var showsBorder = false
+    var skipAnimationID: Int = 0
+    var skipDirection: NotchSwipeDirection? = nil
+    var skipArtwork: NSImage? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var flipAngle: Double = 0
+    @State private var flipBlur: CGFloat = 0
+    @State private var activeFlipID = 0
+    @State private var showingBackFace = false
 
     @ViewBuilder
     var body: some View {
         let artwork = ZStack {
+            cardFace(image)
+                .opacity(showingBackFace ? 0 : 1)
+            cardFace(skipArtwork ?? image)
+                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                .opacity(showingBackFace ? 1 : 0)
+        }
+        .frame(width: size, height: size)
+
+        Group {
+            if let namespace {
+                artwork.matchedGeometryEffect(id: "albumArt", in: namespace)
+            } else {
+                artwork
+            }
+        }
+        .rotation3DEffect(
+            .degrees(flipAngle),
+            axis: (x: 0, y: 1, z: 0),
+            perspective: 0.72
+        )
+        .blur(radius: flipBlur)
+        .onChange(of: skipAnimationID) { _, newID in
+            guard newID != 0, activeFlipID != newID, !reduceMotion, let skipDirection else { return }
+            activeFlipID = newID
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) {
+                flipAngle = 0
+                flipBlur = 0
+                showingBackFace = false
+            }
+
+            let flipTarget: Double = skipDirection == .next ? -180 : 180
+            withAnimation(.easeInOut(duration: 0.56)) {
+                flipAngle = flipTarget
+            }
+            withAnimation(.easeOut(duration: 0.14)) {
+                flipBlur = 1.25
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                guard activeFlipID == newID else { return }
+                showingBackFace = true
+                withAnimation(.easeOut(duration: 0.24)) {
+                    flipBlur = 0
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.60) {
+                guard activeFlipID == newID else { return }
+                var finish = Transaction()
+                finish.disablesAnimations = true
+                withTransaction(finish) {
+                    flipAngle = 0
+                    flipBlur = 0
+                    showingBackFace = false
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func cardFace(_ faceImage: NSImage?) -> some View {
+        ZStack {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(Color.white.opacity(0.08))
 
-            if let image {
-                let img = Image(nsImage: image)
+            if let faceImage {
+                Image(nsImage: faceImage)
                     .resizable()
                     .scaledToFill()
                     .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-
-                img
-                    .id(image)
+                    .id(faceImage)
                     .transition(
                         .asymmetric(
                             insertion: .opacity
@@ -506,29 +596,24 @@ struct ArtworkView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-
-        if let namespace {
-            artwork.matchedGeometryEffect(id: "albumArt", in: namespace)
-        } else {
-            artwork
+        .overlay {
+            if showsBorder {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+            }
         }
     }
 }
 
 struct MediaControlButtonStyle: ButtonStyle {
     var isActive: Bool = false
-    var isHighlighted: Bool = false
-    var isFlashing: Bool = false
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(width: 36, height: 36)
             .background {
-                if isFlashing {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white.opacity(0.28))
-                } else if isActive || isHighlighted {
+                if isActive {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.white.opacity(0.20))
                 } else if hovering || configuration.isPressed {
@@ -537,11 +622,7 @@ struct MediaControlButtonStyle: ButtonStyle {
                 }
             }
             .foregroundStyle(.white)
-            .scaleEffect(
-                isFlashing ? 0.86 : (configuration.isPressed ? 0.85 : (isHighlighted ? 1.15 : (hovering ? 1.05 : 1.0)))
-            )
-            .animation(NotchAnimation.pressSnap, value: isFlashing)
-            .animation(NotchAnimation.hoverScale, value: isHighlighted)
+            .scaleEffect(configuration.isPressed ? 0.96 : (hovering ? 1.05 : 1.0))
             .animation(NotchAnimation.press, value: configuration.isPressed)
             .animation(NotchAnimation.hover, value: hovering)
             .onHover { hovering = $0 }
@@ -660,6 +741,7 @@ struct LiveLyricsView: View {
         TimelineView(.animation(minimumInterval: 0.12, paused: !media.isPlaying)) { context in
             lyricsBody(position: media.currentPosition(at: context.date))
         }
+        .onDisappear { state.hoveringLyrics = false }
     }
 
     private func lyricsBody(position: Double) -> some View {
@@ -768,8 +850,17 @@ struct LiveLyricsView: View {
                         )
                     )
                     .onChange(of: activeIdx) { _, newIdx in
+                        guard !state.hoveringLyrics else { return }
                         withAnimation(.timingCurve(0.22, 1.0, 0.36, 1.0, duration: 0.72)) {
                             proxy.scrollTo(newIdx, anchor: .center)
+                        }
+                    }
+                    .onHover { hovering in
+                        state.hoveringLyrics = hovering
+                        if !hovering {
+                            withAnimation(.timingCurve(0.22, 1.0, 0.36, 1.0, duration: 0.72)) {
+                                proxy.scrollTo(activeIdx, anchor: .center)
+                            }
                         }
                     }
                     .onAppear {
@@ -788,7 +879,7 @@ struct MediaView: View {
     var albumArtNamespace: Namespace.ID? = nil
     var visualizerNamespace: Namespace.ID? = nil
     @State private var favorite = false
-    @State private var hoveringLyrics = false
+    @State private var hoveringLyricsButton = false
 
     var body: some View {
         if !media.hasTrack {
@@ -796,7 +887,7 @@ struct MediaView: View {
         } else {
             HStack(spacing: 0) {
                 playerSection
-                    .frame(width: state.showQueue ? 412 : (state.showLyrics ? 236 : 428))
+                    .frame(width: state.showQueue ? 412 : 428)
 
                 if state.showQueue {
                     Rectangle()
@@ -813,12 +904,12 @@ struct MediaView: View {
                     Rectangle()
                         .fill(Color.white.opacity(0.12))
                         .frame(width: 1)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 16)
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
 
                     LiveLyricsView(lyrics: media.lyrics, media: media, state: state)
-                        .padding(.trailing, 16)
+                        .padding(.trailing, 24)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                 }
             }
@@ -833,12 +924,12 @@ struct MediaView: View {
                     image: media.artwork,
                     size: 52,
                     cornerRadius: 13,
-                    namespace: state.expanded ? albumArtNamespace : nil
+                    namespace: state.expanded ? albumArtNamespace : nil,
+                    showsBorder: true,
+                    skipAnimationID: media.artworkSkipAnimationID,
+                    skipDirection: media.artworkSkipDirection,
+                    skipArtwork: media.artworkSkipArtwork
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: 13)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
-                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -846,39 +937,6 @@ struct MediaView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.tail)
-
-                        if media.lyrics.hasLyrics || media.lyrics.isFetching {
-                            Button {
-                                withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
-                                    state.showLyrics.toggle()
-                                }
-                            } label: {
-                                Text("L")
-                                    .font(.system(size: 9.5, weight: .heavy, design: .rounded))
-                                    .foregroundStyle(Color.black)
-                                    .frame(width: 17, height: 17)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4.5)
-                                            .fill(Color.white)
-                                    )
-                                    .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                            }
-                            .buttonStyle(.plain)
-                            .scaleEffect(hoveringLyrics ? 1.06 : 1.0)
-                            .animation(.spring(response: 0.25, dampingFraction: 0.75), value: hoveringLyrics)
-                            .onHover { hoveringLyrics = $0 }
-                            .layoutPriority(1)
-                        }
-
-                        if state.showLyrics {
-                            EqualizerBars(
-                                active: media.isPlaying,
-                                useGradient: true,
-                                tint: media.artworkTint,
-                                namespace: state.expanded ? visualizerNamespace : nil
-                            )
-                            .layoutPriority(1)
-                        }
                     }
 
                     Text(media.artist.isEmpty ? media.sourceLabel : media.artist)
@@ -887,16 +945,18 @@ struct MediaView: View {
                         .lineLimit(1)
                 }
 
-                if !state.showLyrics {
-                    Spacer(minLength: 8)
-
-                    EqualizerBars(
-                        active: media.isPlaying,
-                        useGradient: true,
-                        tint: media.artworkTint,
-                        namespace: state.expanded ? visualizerNamespace : nil
-                    )
+                if media.lyrics.hasLyrics || media.lyrics.isFetching {
+                    lyricsButton
                 }
+
+                Spacer(minLength: 8)
+
+                EqualizerBars(
+                    active: media.isPlaying,
+                    useGradient: true,
+                    tint: media.artworkTint,
+                    namespace: state.expanded ? visualizerNamespace : nil
+                )
             }
 
             SeekBar(media: media)
@@ -904,64 +964,81 @@ struct MediaView: View {
             controls
         }
         .padding(.horizontal, 24)
-        .offset(x: state.swipeOffset)
-        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: state.swipeOffset)
+    }
+
+    private var lyricsButton: some View {
+        Button {
+            withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
+                state.showLyrics.toggle()
+            }
+        } label: {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.white.opacity(state.showLyrics || hoveringLyricsButton ? 1 : 0.78))
+                .frame(width: 28, height: 28)
+                .background {
+                    if state.showLyrics || hoveringLyricsButton {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.white.opacity(state.showLyrics ? 0.20 : 0.10))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .onHover { hoveringLyricsButton = $0 }
+        .accessibilityLabel(state.showLyrics ? "Hide lyrics" : "Show lyrics")
     }
 
     private var controls: some View {
         ZStack {
-            if !state.showLyrics {
-                HStack {
-                    HStack(spacing: 6) {
-                        Button {
-                            withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
-                                state.showQueue.toggle()
-                            }
-                        } label: {
-                            Image(systemName: "list.bullet")
-                                .font(.system(size: 16, weight: .medium))
+            HStack {
+                HStack(spacing: 6) {
+                    Button {
+                        withAnimation(NotchAnimation.spring(response: 0.38, dampingFraction: 0.78)) {
+                            state.showQueue.toggle()
                         }
-                        .buttonStyle(MediaControlButtonStyle(isActive: state.showQueue))
-
-                        Rectangle()
-                            .fill(Color.white.opacity(0.18))
-                            .frame(width: 1, height: 14)
-
-                        Button { favorite.toggle() } label: {
-                            Image(systemName: favorite ? "star.fill" : "star")
-                                .contentTransition(.symbolEffect)
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(favorite ? .yellow : .white)
-                        }
-                        .buttonStyle(MediaControlButtonStyle())
+                    } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 16, weight: .medium))
                     }
+                    .buttonStyle(MediaControlButtonStyle(isActive: state.showQueue))
 
-                    Spacer()
+                    Rectangle()
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 1, height: 14)
 
-                    HStack(spacing: 6) {
-                        Button { media.toggleShuffle() } label: {
-                            Image(systemName: "shuffle")
-                                .contentTransition(.symbolEffect)
-                                .font(.system(size: 17, weight: .medium))
-                                .foregroundStyle(media.shuffleOn ? Color.green : (media.canShuffle ? .white : .white.opacity(0.35)))
-                        }
-                        .buttonStyle(MediaControlButtonStyle())
-                        .disabled(!media.canShuffle)
-
-                        Rectangle()
-                            .fill(Color.white.opacity(0.18))
-                            .frame(width: 1, height: 14)
-
-                        Button {
-                            NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 16, weight: .medium))
-                        }
-                        .buttonStyle(MediaControlButtonStyle())
+                    Button { favorite.toggle() } label: {
+                        Image(systemName: favorite ? "star.fill" : "star")
+                            .contentTransition(.symbolEffect)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(favorite ? .yellow : .white)
                     }
+                    .buttonStyle(MediaControlButtonStyle())
                 }
-                .transition(.opacity)
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Button { media.toggleShuffle() } label: {
+                        Image(systemName: "shuffle")
+                            .contentTransition(.symbolEffect)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(media.shuffleOn ? Color.green : (media.canShuffle ? .white : .white.opacity(0.35)))
+                    }
+                    .buttonStyle(MediaControlButtonStyle())
+                    .disabled(!media.canShuffle)
+
+                    Rectangle()
+                        .fill(Color.white.opacity(0.18))
+                        .frame(width: 1, height: 14)
+
+                    Button {
+                        NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                    .buttonStyle(MediaControlButtonStyle())
+                }
             }
 
             HStack(spacing: 20) {
@@ -970,11 +1047,9 @@ struct MediaView: View {
                 } label: {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 19, weight: .bold))
+                        .symbolEffect(.bounce, options: .nonRepeating, value: state.previousSkipAnimationID)
                 }
-                .buttonStyle(MediaControlButtonStyle(
-                    isHighlighted: state.activeSwipeDirection == .previous,
-                    isFlashing: state.flashDirection == .previous
-                ))
+                .buttonStyle(MediaControlButtonStyle())
 
                 Button { media.playPause() } label: {
                     Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
@@ -988,11 +1063,9 @@ struct MediaView: View {
                 } label: {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 19, weight: .bold))
+                        .symbolEffect(.bounce, options: .nonRepeating, value: state.nextSkipAnimationID)
                 }
-                .buttonStyle(MediaControlButtonStyle(
-                    isHighlighted: state.activeSwipeDirection == .next,
-                    isFlashing: state.flashDirection == .next
-                ))
+                .buttonStyle(MediaControlButtonStyle())
             }
         }
     }
