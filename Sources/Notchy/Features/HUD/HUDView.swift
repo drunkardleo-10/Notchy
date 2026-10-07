@@ -236,20 +236,16 @@ struct HUDView: View {
                         HStack(spacing: 10) {
                             Image(systemName: unlocked ? "lock.open.fill" : "lock.fill")
                                 .font(.system(size: 16, weight: .semibold))
-                                .contentTransition(.symbolEffect(.replace.downUp))
-                                .symbolEffect(.bounce, value: unlocked)
                                 .frame(width: 18, height: 26)
                             Text(unlocked ? "Unlocked" : "Locked")
                                 .font(.system(size: 12, weight: .semibold))
-                                .contentTransition(.numericText())
                             Spacer(minLength: 0)
                         }
                     }
                 } else {
                     inlineSymbolRow(
                         icon: unlocked ? "lock.open.fill" : "lock.fill",
-                        text: unlocked ? "Unlocked" : "Locked",
-                        bounceValue: unlocked
+                        text: unlocked ? "Unlocked" : "Locked"
                     )
                 }
             case .capsLock(let on):
@@ -263,7 +259,6 @@ struct HUDView: View {
                         HStack(spacing: 10) {
                             Image(systemName: on ? "capslock.fill" : "capslock")
                                 .font(.system(size: 16, weight: .semibold))
-                                .contentTransition(.symbolEffect(.replace))
                                 .frame(width: 18, height: 26)
                             Text(on ? "Caps Lock On" : "Caps Lock Off")
                                 .font(.system(size: 12, weight: .semibold))
@@ -281,7 +276,7 @@ struct HUDView: View {
         .foregroundStyle(.white)
     }
 
-    private func inlineSymbolRow(icon: String, text: String, bounceValue: Bool? = nil) -> some View {
+    private func inlineSymbolRow(icon: String, text: String) -> some View {
         NotchAccessory(
             notch: notch,
             leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
@@ -292,13 +287,10 @@ struct HUDView: View {
         ) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .semibold))
-                .contentTransition(.symbolEffect(.replace.downUp))
-                .symbolEffect(.bounce, value: bounceValue ?? false)
         } trailing: {
             Text(text)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
-                .contentTransition(.numericText())
         }
     }
 

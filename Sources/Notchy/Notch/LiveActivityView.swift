@@ -28,6 +28,7 @@ struct LiveActivityView: View {
                 size: 20,
                 cornerRadius: 5,
                 namespace: albumArtNamespace,
+                isSource: !state.expanded,
                 skipAnimationID: media.artworkSkipAnimationID,
                 skipDirection: media.artworkSkipDirection,
                 skipArtwork: media.artworkSkipArtwork
@@ -49,7 +50,8 @@ struct LiveActivityView: View {
                         EqualizerBars(
                             active: media.isPlaying,
                             tint: media.artworkTint,
-                            namespace: visualizerNamespace
+                            namespace: visualizerNamespace,
+                            isSource: !state.expanded
                         )
                         .blur(radius: !state.expanded && state.hoveringNotch ? 3.5 : 0)
 
@@ -77,12 +79,13 @@ struct EqualizerBars: View {
     var useGradient: Bool = false
     var tint: Color = Color(white: 0.82)
     var namespace: Namespace.ID? = nil
+    var isSource: Bool = true
     @ObservedObject private var visualizer = AudioVisualizer.shared
 
     var body: some View {
         Group {
             if let namespace {
-                barsView.matchedGeometryEffect(id: "mediaVisualizer", in: namespace)
+                barsView.matchedGeometryEffect(id: "mediaVisualizer", in: namespace, isSource: isSource)
             } else {
                 barsView
             }

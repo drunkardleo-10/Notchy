@@ -95,7 +95,6 @@ struct NotchView: View {
     }
 
     private var liveSize: CGSize? {
-        guard !state.expanded else { return nil }
         if pomodoro.started {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
@@ -223,9 +222,10 @@ struct NotchView: View {
                         height: state.expandedSize.height,
                         alignment: .top
                     )
-                    .frame(width: width, height: height, alignment: .top)
                     .opacity(state.expanded ? 1 : 0)
                     .blur(radius: state.expanded ? 0 : 20)
+                    .allowsHitTesting(state.expanded)
+                    .accessibilityHidden(!state.expanded)
 
                 if let size = liveSize {
                     Group {
@@ -241,8 +241,10 @@ struct NotchView: View {
                         }
                     }
                     .frame(width: size.width, height: size.height)
-                    .blur(radius: hidesLiveActivityForHUD ? 7 : 0)
-                    .opacity(hidesLiveActivityForHUD ? 0 : 1)
+                    .blur(radius: (hidesLiveActivityForHUD || state.expanded) ? 7 : 0)
+                    .opacity((state.expanded || hidesLiveActivityForHUD) ? 0 : 1)
+                    .allowsHitTesting(!state.expanded)
+                    .accessibilityHidden(state.expanded)
                     .transition(.opacity.animation(expansionAnimation))
                     .zIndex(1)
                 }
@@ -498,6 +500,7 @@ struct ArtworkView: View {
     let size: CGFloat
     let cornerRadius: CGFloat
     var namespace: Namespace.ID? = nil
+    var isSource: Bool = true
     var showsBorder = false
     var skipAnimationID: Int = 0
     var skipDirection: NotchSwipeDirection? = nil
@@ -518,15 +521,15 @@ struct ArtworkView: View {
                 .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                 .opacity(showingBackFace ? 1 : 0)
         }
-        .frame(width: size, height: size)
 
         Group {
             if let namespace {
-                artwork.matchedGeometryEffect(id: "albumArt", in: namespace)
+                artwork.matchedGeometryEffect(id: "albumArt", in: namespace, isSource: isSource)
             } else {
                 artwork
             }
         }
+        .frame(width: size, height: size)
         .rotation3DEffect(
             .degrees(flipAngle),
             axis: (x: 0, y: 1, z: 0),
@@ -581,7 +584,6 @@ struct ArtworkView: View {
                 Image(nsImage: faceImage)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: size, height: size)
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                     .id(faceImage)
                     .transition(
@@ -601,7 +603,6 @@ struct ArtworkView: View {
                     .transition(.opacity.animation(.easeInOut(duration: 0.2)))
             }
         }
-        .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay {
             if showsBorder {
@@ -931,7 +932,8 @@ struct MediaView: View {
                     image: media.artwork,
                     size: 52,
                     cornerRadius: 13,
-                    namespace: state.expanded ? albumArtNamespace : nil,
+                    namespace: albumArtNamespace,
+                    isSource: state.expanded,
                     showsBorder: true,
                     skipAnimationID: media.artworkSkipAnimationID,
                     skipDirection: media.artworkSkipDirection,
@@ -962,7 +964,8 @@ struct MediaView: View {
                     active: media.isPlaying,
                     useGradient: true,
                     tint: media.artworkTint,
-                    namespace: state.expanded ? visualizerNamespace : nil
+                    namespace: visualizerNamespace,
+                    isSource: state.expanded
                 )
             }
 
