@@ -150,8 +150,10 @@ private struct AnimationSpeedSelector: View {
                                     .fill(Color.accentColor)
                             }
                         }
+                        .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                 .help(speed.title)
                 .accessibilityLabel("\(speed.title) animation speed")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -228,7 +230,10 @@ struct GeneralSettingsTab: View {
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.white.opacity(0.7))
                                     .frame(width: 28, height: 26)
-                            }.buttonStyle(.plain)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                             Text("\(limit)")
                                 .font(.system(size: 13, weight: .semibold).monospacedDigit())
                                 .foregroundStyle(.white)
@@ -238,7 +243,10 @@ struct GeneralSettingsTab: View {
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundStyle(.white.opacity(0.7))
                                     .frame(width: 28, height: 26)
-                            }.buttonStyle(.plain)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
                         .background(Capsule().fill(.white.opacity(0.09)))
                         .overlay { Capsule().strokeBorder(.white.opacity(0.1), lineWidth: 1) }
@@ -267,6 +275,12 @@ struct GeneralSettingsTab: View {
                     }
                     .padding(.vertical, 8)
                     .padding(.horizontal, 14)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+                            launchAtLogin.toggle()
+                        }
+                    }
                 }
             }
             .padding(.top, 4)

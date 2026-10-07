@@ -42,9 +42,11 @@ struct PremiumToggle: View {
                     .offset(x: isOn ? 9.5 : -9.5)
                     .scaleEffect(isOn ? 1 : 0.94)
             }
+            .contentShape(Capsule())
             .animation(.spring(response: 0.32, dampingFraction: 0.72), value: isOn)
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
         .frame(width: 46, height: 27)
     }
 }
@@ -85,8 +87,10 @@ struct PillTabBar: View {
                                 .matchedGeometryEffect(id: "pill", in: pill)
                         }
                     }
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .contentShape(Capsule())
                 .focusable(false)
             }
         }
@@ -178,6 +182,12 @@ struct SettingRow: View {
         }
         .padding(.vertical, 8)
         .padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+                isOn.toggle()
+            }
+        }
     }
 }
 
@@ -210,8 +220,10 @@ struct VolumeHUDStyleSelector: View {
                             Capsule().fill(.white.opacity(0.15))
                         }
                     }
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .contentShape(Capsule())
                 .focusable(false)
                 .accessibilityLabel("\(style.title) HUD indicators")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -290,8 +302,10 @@ struct QuickActionButton: View {
                             }
                         }
                 }
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .contentShape(Capsule())
     }
 }
 

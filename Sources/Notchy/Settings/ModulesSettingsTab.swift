@@ -86,6 +86,12 @@ struct ModulesSettingsTab: View {
                         .padding(.horizontal, 14)
                         .padding(.leading, 22)
                         .background(Color.white.opacity(0.03))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) {
+                                basket.toggle()
+                            }
+                        }
                         .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                     CardDivider()
