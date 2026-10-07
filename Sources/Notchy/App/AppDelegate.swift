@@ -12,7 +12,7 @@ final class NotchSpaceManager {
     let notchSpace: CGSSpace
 
     private init() {
-        notchSpace = CGSSpace(level: 2147483647)
+        notchSpace = CGSSpace(level: 400)
     }
 }
 
@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var moduleSwipeTriggered = false
     private var moduleSwipeClaimed = false
     private var moduleSwipeResetWork: DispatchWorkItem?
+    private var isScreenLocked = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Pref.registerDefaults()
@@ -88,6 +89,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         setUpMonitors()
         hudMonitor = HUDMonitor(states: { [weak self] in self?.allNotchStates ?? [] })
+        hudMonitor?.onLockStateChanged = { [weak self] isLocked in
+            self?.handleLockStateChanged(isLocked: isLocked)
+        }
         pomodoro.onFinish = { [weak self] phase in
             NSSound(named: "Glass")?.play()
             self?.hudMonitor?.showMessage(icon: phase == .focus ? "checkmark.circle.fill" : "cup.and.saucer.fill",
@@ -161,8 +165,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isFloatingPanel = true
         panel.isMovable = false
-        panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+        panel.level = NSWindow.Level(rawValue: Int(Int32.max - 2))
         panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
+        panel.canBecomeVisibleWithoutLogin = true
         panel.ignoresMouseEvents = true
 
         let root = NotchView(state: state, shelf: shelf, clipboard: clipboard, media: media,
@@ -376,7 +381,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if interactive && openingHaptic && Pref.bool(Pref.hapticFeedback) {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
-            targetState.hoveringNotch = false
             targetState.hud = nil
             targetPanel.ignoresMouseEvents = !interactive
             if interactive { targetPanel.makeKey() }
@@ -387,9 +391,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if interactive { targetPanel.resignKey() }
         }
         if expanded {
-            targetState.expanded = true
+            withAnimation(NotchAnimation.notchOpen(for: targetPanel.screen)) {
+                targetState.hoveringNotch = false
+                targetState.expanded = true
+            }
         } else {
             withAnimation(NotchAnimation.notchClose(for: targetPanel.screen), completionCriteria: .logicallyComplete) {
+                targetState.hoveringNotch = false
                 targetState.expanded = false
             } completion: { [weak self] in
                 guard let self else { return }
@@ -421,11 +429,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }) { monitors.append(localScroll) }
     }
 
+    private func handleLockStateChanged(isLocked: Bool) {
+        self.isScreenLocked = isLocked
+        if isLocked {
+            cancelPendingExpansion()
+            cancelAllCollapseWork()
+            setExpanded(false, interactive: false, openingHaptic: false)
+            NotchSpaceManager.shared.notchSpace.show()
+            primaryPanel?.orderFrontRegardless()
+            for instance in additionalDisplays.values {
+                instance.panel.orderFrontRegardless()
+            }
+        } else {
+            evaluateHover()
+        }
+    }
+
     private func onMouse(_ type: NSEvent.EventType, dx: CGFloat) {
+        guard !isScreenLocked else { return }
         switch type {
         case .leftMouseDown:
             dragBaseline = NSPasteboard(name: .drag).changeCount
             draggingContent = false
+            let loc = NSEvent.mouseLocation
+            if !state.expanded && (state.hoveringNotch || isMouseInNotch(loc)) {
+                if state.hoveringNotch && isMouseInTrailingLiveActivity(loc) {
+                    if Pref.bool(Pref.hapticFeedback) {
+                        NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                    }
+                    media.playPause()
+                    return
+                }
+                setExpanded(true, interactive: true, openingHaptic: true, state: state, panel: panel, displayID: activeDisplayID ?? "primary")
+            }
         case .leftMouseUp:
             draggingContent = false
             reversals.removeAll()
@@ -452,6 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func evaluateHover() {
+        guard !isScreenLocked else { return }
         if glassPreviewWasExpanded != nil {
             collapseWork?.cancel()
             collapseWork = nil
@@ -530,13 +567,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
-        let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth : draggingContent ? 60 : 8
-        let slackY: CGFloat = draggingContent ? 30 : 4
+        let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
+        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
+        let isHovering = hot && allowedDisplay
+        updateHoveringNotch(isHovering)
         let canOpenOnHover = Pref.bool(Pref.hoverOpen) || draggingContent
-        updateHoveringNotch(hot && allowedDisplay && canOpenOnHover)
-        guard hot, allowedDisplay, canOpenOnHover else {
+        guard isHovering, canOpenOnHover else {
             cancelPendingExpansion()
             return
         }
@@ -615,9 +653,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateHoveringNotch(_ hovering: Bool) {
-        guard state.hoveringNotch != hovering else { return }
-        state.hoveringNotch = hovering
-        guard hovering, Pref.bool(Pref.hapticFeedback) else { return }
+        guard !state.expanded else {
+            if state.hoveringNotch { state.hoveringNotch = false }
+            return
+        }
+        let shouldHover = hovering && !Pref.bool(Pref.hoverOpen)
+        guard state.hoveringNotch != shouldHover else { return }
+        withAnimation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78)) {
+            state.hoveringNotch = shouldHover
+        }
+        guard shouldHover, Pref.bool(Pref.hapticFeedback) else { return }
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
 
@@ -638,15 +683,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 && loc.x <= f.midX + s.width / 2 + 14 + navigationExtension
                 && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
         } else {
+            if state.hoveringNotch { return true }
             let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
-            let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth : 8
-            let slackY: CGFloat = 4
+            let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth + 12 : 20
+            let slackY: CGFloat = 14
             return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         }
     }
 
+    private func isMouseInTrailingLiveActivity(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let liveShowing = Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack
+        guard liveShowing else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+        let minX = f.midX + notch.width / 2 - 4
+        let maxX = minX + LiveActivityLayout.sideWidth + 10
+        return loc.x >= minX && loc.x <= maxX && loc.y >= f.maxY - notch.height - 14 && loc.y <= f.maxY + 4
+    }
+
     @discardableResult
     private func handleScrollWheel(_ event: NSEvent) -> Bool {
+        guard !isScreenLocked else { return false }
         selectDisplayForPointer()
         let loc = NSEvent.mouseLocation
         let isOverLyricsList = state.expanded && state.showLyrics && state.tab == .media && state.hoveringLyrics
@@ -655,7 +713,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lyricsScrollGestureIgnored = false
             resetSwipeGesture()
             resetModuleSwipeGesture()
-            swipeStartedInNotch = !isOverLyricsList && isMouseInNotch(loc)
+            swipeStartedInNotch = !isOverLyricsList && (state.hoveringNotch || isMouseInNotch(loc))
         }
 
         if isOverLyricsList {
@@ -695,6 +753,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let rawDx = event.scrollingDeltaX
         let rawDy = event.scrollingDeltaY
+        let physicalDy = event.isDirectionInvertedFromDevice ? rawDy : -rawDy
+
+        if !state.expanded && (state.hoveringNotch || isMouseInNotch(loc)) {
+            if event.hasPreciseScrollingDeltas, abs(rawDy) > abs(rawDx), physicalDy <= -20 {
+                setExpanded(true, interactive: true, openingHaptic: true, state: state, panel: panel, displayID: activeDisplayID ?? "primary")
+                return true
+            }
+        }
+
         if state.expanded,
            NotchTab.available.count > 1,
            event.hasPreciseScrollingDeltas,
@@ -703,7 +770,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             moduleSwipeClaimed = true
             cancelPendingExpansion()
 
-            let physicalDy = event.isDirectionInvertedFromDevice ? rawDy : -rawDy
             moduleSwipeAccumulator += physicalDy
             if !moduleSwipeTriggered {
                 if moduleSwipeAccumulator <= -36 {
@@ -741,7 +807,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return false
         }
-        guard swipeGestureClaimed || swipeStartedInNotch || isMouseInNotch(loc) else {
+        guard swipeGestureClaimed || swipeStartedInNotch || state.hoveringNotch || isMouseInNotch(loc) else {
             resetSwipeGesture()
             return false
         }
@@ -756,17 +822,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         swipeGestureClaimed = true
         cancelPendingExpansion()
 
-        // Normalize natural scrolling so the delta follows the finger's direction.
         let physicalDx = event.isDirectionInvertedFromDevice ? rawDx : -rawDx
         swipeAccumulator += physicalDx
 
         let threshold: CGFloat = 36
         if !swipeTriggered {
-            // A leftward swipe advances; a rightward swipe goes back.
-            if swipeAccumulator <= -threshold {
+            if swipeAccumulator >= threshold {
                 swipeTriggered = true
                 triggerSwipe(.next)
-            } else if swipeAccumulator >= threshold {
+            } else if swipeAccumulator <= -threshold {
                 swipeTriggered = true
                 triggerSwipe(.previous)
             }

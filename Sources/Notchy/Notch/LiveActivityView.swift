@@ -45,15 +45,28 @@ struct LiveActivityView: View {
                         .foregroundStyle(.white)
                         .transition(.scale.combined(with: .opacity))
                 } else {
-                    EqualizerBars(
-                        active: media.isPlaying,
-                        tint: media.artworkTint,
-                        namespace: visualizerNamespace
-                    )
-                        .transition(.opacity)
+                    ZStack {
+                        EqualizerBars(
+                            active: media.isPlaying,
+                            tint: media.artworkTint,
+                            namespace: visualizerNamespace
+                        )
+                        .blur(radius: !state.expanded && state.hoveringNotch ? 3.5 : 0)
+
+                        if !state.expanded && state.hoveringNotch {
+                            Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(.white)
+                                .shadow(color: .black.opacity(0.35), radius: 2)
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                        }
+                    }
+                    .transition(.opacity)
                 }
             }
             .animation(.spring(response: 0.24, dampingFraction: 0.72), value: state.flashDirection)
+            .animation(.spring(response: 0.24, dampingFraction: 0.75), value: state.hoveringNotch)
+            .animation(.easeInOut(duration: 0.15), value: media.isPlaying)
         }
         .foregroundStyle(.white)
     }

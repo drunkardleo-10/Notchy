@@ -32,6 +32,10 @@ public final class CGSSpace {
         self.createdByInit = false
     }
 
+    public func show() {
+        CGSShowSpaces(_CGSDefaultConnection(), [self.identifier])
+    }
+
     deinit {
         CGSHideSpaces(_CGSDefaultConnection(), [self.identifier])
         if createdByInit {

@@ -7,7 +7,8 @@ import IOKit.ps
 @MainActor
 final class HUDSystemEventMonitor: NSObject {
     private let states: () -> [NotchState]
-    private let showEvent: (HUDKind, TimeInterval) -> Void
+    private let showEvent: (HUDKind, TimeInterval?) -> Void
+    var onLockStateChanged: ((Bool) -> Void)?
 
     private var lastBrightness: Float = -1
     private var brightnessTimer: Timer?
@@ -21,9 +22,14 @@ final class HUDSystemEventMonitor: NSObject {
     private var lastCaps = false
     private var capsTimer: Timer?
 
-    init(states: @escaping () -> [NotchState], showEvent: @escaping (HUDKind, TimeInterval) -> Void) {
+    init(
+        states: @escaping () -> [NotchState],
+        showEvent: @escaping (HUDKind, TimeInterval?) -> Void,
+        onLockStateChanged: ((Bool) -> Void)? = nil
+    ) {
         self.states = states
         self.showEvent = showEvent
+        self.onLockStateChanged = onLockStateChanged
         super.init()
     }
 
@@ -135,11 +141,12 @@ final class HUDSystemEventMonitor: NSObject {
     }
 
     private func lockChanged(unlocked: Bool) {
+        onLockStateChanged?(!unlocked)
         guard Pref.bool(Pref.lockHUD) else { return }
-        guard unlocked else { showEvent(.lock(unlocked: false), 1.5); return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.showEvent(.lock(unlocked: false), 2)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self?.showEvent(.lock(unlocked: true), 1.6) }
+        if !unlocked {
+            showEvent(.lock(unlocked: false), nil)
+        } else {
+            showEvent(.lock(unlocked: true), 1.5)
         }
     }
 

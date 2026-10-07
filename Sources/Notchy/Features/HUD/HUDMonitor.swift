@@ -1,13 +1,22 @@
 import AppKit
 import AudioToolbox
 import CoreAudio
+import SwiftUI
 
 @MainActor
 final class HUDMonitor: NSObject {
     private let states: () -> [NotchState]
-    private lazy var systemEventMonitor = HUDSystemEventMonitor(states: states) { [weak self] kind, duration in
-        self?.show(kind, duration: duration)
-    }
+    var onLockStateChanged: ((Bool) -> Void)?
+
+    private lazy var systemEventMonitor = HUDSystemEventMonitor(
+        states: states,
+        showEvent: { [weak self] kind, duration in
+            self?.show(kind, duration: duration)
+        },
+        onLockStateChanged: { [weak self] isLocked in
+            self?.onLockStateChanged?(isLocked)
+        }
+    )
     private var hideWork: DispatchWorkItem?
 
     private var deviceID = AudioObjectID(kAudioObjectUnknown)
@@ -27,13 +36,24 @@ final class HUDMonitor: NSObject {
     }
 
 
-    private func show(_ kind: HUDKind, duration: TimeInterval) {
+    private func show(_ kind: HUDKind, duration: TimeInterval?) {
         let visibleStates = states().filter { !$0.expanded }
         guard !visibleStates.isEmpty else { return }
-        for state in visibleStates { state.hud = HUDEvent(kind: kind) }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            for state in visibleStates {
+                if let existing = state.hud, case .lock = existing.kind, case .lock = kind {
+                    state.hud?.kind = kind
+                } else {
+                    state.hud = HUDEvent(kind: kind)
+                }
+            }
+        }
         hideWork?.cancel()
+        guard let duration, duration > 0 else { return }
         let work = DispatchWorkItem { [weak self] in
-            for state in self?.states() ?? [] { state.hud = nil }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                for state in self?.states() ?? [] { state.hud = nil }
+            }
         }
         hideWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)

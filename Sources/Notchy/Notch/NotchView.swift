@@ -251,6 +251,7 @@ struct NotchView: View {
             .clipShape(shape)
             .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
             .offset(x: collapsedHorizontalOffset)
+            .scaleEffect(!state.expanded && state.hoveringNotch ? 1.05 : 1.0, anchor: .top)
             .overlay(alignment: .trailing) {
                 if tabs.count > 1 {
                     ModuleNavigationPill(tabs: tabs, selection: activeTab, onSelect: state.selectTab)

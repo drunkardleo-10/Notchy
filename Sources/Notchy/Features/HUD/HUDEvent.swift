@@ -13,6 +13,11 @@ enum HUDKind: Equatable {
 enum BatteryState: Equatable { case charging, onBattery, low, full }
 
 struct HUDEvent: Equatable {
-    let id = UUID()
-    let kind: HUDKind
+    let id: UUID
+    var kind: HUDKind
+
+    init(id: UUID = UUID(), kind: HUDKind) {
+        self.id = id
+        self.kind = kind
+    }
 }
