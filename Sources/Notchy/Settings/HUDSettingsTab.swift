@@ -12,19 +12,20 @@ struct HUDSettingsTab: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                SettingsCard(title: "Audio & Display") {
-                    SettingRow(icon: "speaker.wave.2.fill", color: .blue, title: "Volume HUD", isOn: $volumeHUD)
-                    CardDivider()
+                SettingsCard(title: "HUD Style") {
                     HStack(spacing: 12) {
-                        Text("Volume & Brightness")
+                        Text("Style")
                             .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(.white.opacity(0.86))
-                            .padding(.leading, 42)
+                            .padding(.leading, 14)
                         Spacer(minLength: 8)
                         VolumeHUDStyleSelector(selection: $volumeHUDStyle)
                     }
                     .padding(.vertical, 8)
                     .padding(.trailing, 14)
+                }
+                SettingsCard(title: "Audio & Display") {
+                    SettingRow(icon: "speaker.wave.2.fill", color: .blue, title: "Volume HUD", isOn: $volumeHUD)
                     CardDivider()
                     SettingRow(icon: "sun.max.fill", color: .orange, title: "Brightness HUD", isOn: $brightnessHUD)
                     CardDivider()

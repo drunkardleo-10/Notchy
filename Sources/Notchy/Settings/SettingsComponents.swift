@@ -213,7 +213,7 @@ struct VolumeHUDStyleSelector: View {
                 }
                 .buttonStyle(.plain)
                 .focusable(false)
-                .accessibilityLabel("\(style.title) volume and brightness indicators")
+                .accessibilityLabel("\(style.title) HUD indicators")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }

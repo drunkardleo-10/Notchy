@@ -73,6 +73,8 @@ enum HUDLayout {
     static let sideWidth: CGFloat = 95
     static let inlineVolumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let inlineVolumeTrailingWidth: CGFloat = 80
+    static let inlineSymbolLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
+    static let inlineSymbolTrailingWidth: CGFloat = 64
     static let peekLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let peekTrailingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let peekHeight: CGFloat = 68
@@ -95,11 +97,15 @@ enum HUDLayout {
                 leadingWidth: inlineVolumeLeadingWidth,
                 trailingWidth: inlineVolumeTrailingWidth
             )
+        case .lock, .capsLock:
+            if volumeStyle == .peek { return peekSize(notch: notch) }
+            return NotchAccessoryLayout.size(
+                notch: notch,
+                leadingWidth: inlineSymbolLeadingWidth,
+                trailingWidth: inlineSymbolTrailingWidth
+            )
         default:
             break
-        }
-        if case .lock(unlocked: true) = hud.kind {
-            return peekSize(notch: notch)
         }
         var h = notch.height
         switch hud.kind {
@@ -220,7 +226,7 @@ struct HUDView: View {
             case .message(let icon, let title, let subtitle):
                 tallRow(icon: icon, title: title, subtitle: subtitle)
             case .lock(let unlocked):
-                if unlocked {
+                if volumeStyle == .peek {
                     PeekHUDView(
                         notch: notch,
                         leadingWidth: HUDLayout.peekLeadingWidth,
@@ -228,34 +234,67 @@ struct HUDView: View {
                         height: HUDLayout.peekHeight
                     ) {
                         HStack(spacing: 10) {
-                            Image(systemName: "lock.open.fill")
+                            Image(systemName: unlocked ? "lock.open.fill" : "lock.fill")
                                 .font(.system(size: 16, weight: .semibold))
+                                .contentTransition(.symbolEffect(.replace))
                                 .frame(width: 18, height: 26)
-                            Text("Unlocked")
+                            Text(unlocked ? "Unlocked" : "Locked")
                                 .font(.system(size: 12, weight: .semibold))
                             Spacer(minLength: 0)
                         }
                     }
                 } else {
-                    symbolRow(icon: "lock.fill", text: "Locked")
+                    inlineSymbolRow(
+                        icon: unlocked ? "lock.open.fill" : "lock.fill",
+                        text: unlocked ? "Unlocked" : "Locked"
+                    )
                 }
             case .capsLock(let on):
-                symbolRow(icon: on ? "capslock.fill" : "capslock", text: on ? "Caps On" : "Caps Off")
+                if volumeStyle == .peek {
+                    PeekHUDView(
+                        notch: notch,
+                        leadingWidth: HUDLayout.peekLeadingWidth,
+                        trailingWidth: HUDLayout.peekTrailingWidth,
+                        height: HUDLayout.peekHeight
+                    ) {
+                        HStack(spacing: 10) {
+                            Image(systemName: on ? "capslock.fill" : "capslock")
+                                .font(.system(size: 16, weight: .semibold))
+                                .contentTransition(.symbolEffect(.replace))
+                                .frame(width: 18, height: 26)
+                            Text(on ? "Caps Lock On" : "Caps Lock Off")
+                                .font(.system(size: 12, weight: .semibold))
+                            Spacer(minLength: 0)
+                        }
+                    }
+                } else {
+                    inlineSymbolRow(
+                        icon: on ? "capslock.fill" : "capslock",
+                        text: on ? "Caps On" : "Caps Off"
+                    )
+                }
             }
         }
         .foregroundStyle(.white)
     }
 
-    private func symbolRow(icon: String, text: String, tint: Color = .white) -> some View {
-        HStack(spacing: 0) {
-            Image(systemName: icon).font(.system(size: 13, weight: .semibold)).foregroundStyle(tint)
+    private func inlineSymbolRow(icon: String, text: String) -> some View {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
+            trailingWidth: HUDLayout.inlineSymbolTrailingWidth,
+            leadingAlignment: .center,
+            trailingAlignment: .leading,
+            trailingInset: 4
+        ) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
                 .contentTransition(.symbolEffect(.replace))
-                .frame(width: HUDLayout.sideWidth, alignment: .trailing).padding(.trailing, 4)
-            Spacer().frame(width: notch.width)
-            Text(text).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                .frame(width: HUDLayout.sideWidth, alignment: .leading).padding(.leading, 6)
+        } trailing: {
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
         }
-        .frame(height: notch.height)
     }
 
     private func tallRow(icon: String, title: String, subtitle: String, tint: Color = .white) -> some View {

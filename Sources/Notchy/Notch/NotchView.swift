@@ -112,13 +112,19 @@ struct NotchView: View {
         switch hud.kind {
         case .volume, .brightness:
             guard volumeHUDStyle == .inline else { return 0 }
+            return NotchAccessoryLayout.centerOffset(
+                leadingWidth: HUDLayout.volumeLeadingWidth(for: volumeHUDStyle),
+                trailingWidth: HUDLayout.volumeTrailingWidth(for: volumeHUDStyle)
+            )
+        case .lock, .capsLock:
+            guard volumeHUDStyle == .inline else { return 0 }
+            return NotchAccessoryLayout.centerOffset(
+                leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
+                trailingWidth: HUDLayout.inlineSymbolTrailingWidth
+            )
         default:
             return 0
         }
-        return NotchAccessoryLayout.centerOffset(
-            leadingWidth: HUDLayout.volumeLeadingWidth(for: volumeHUDStyle),
-            trailingWidth: HUDLayout.volumeTrailingWidth(for: volumeHUDStyle)
-        )
     }
     private var isCompact: Bool {
         !(state.showQueue || state.showLyrics)
@@ -146,10 +152,10 @@ struct NotchView: View {
     private var isPeekHUD: Bool {
         guard !state.expanded, let hud = state.hud else { return false }
         switch hud.kind {
-        case .volume where volumeHUDStyle == .peek: return true
-        case .brightness where volumeHUDStyle == .peek: return true
-        case .lock(unlocked: true): return true
-        default: return false
+        case .volume, .brightness, .lock, .capsLock:
+            return volumeHUDStyle == .peek
+        default:
+            return false
         }
     }
 
@@ -614,10 +620,10 @@ struct MediaControlButtonStyle: ButtonStyle {
             .frame(width: 36, height: 36)
             .background {
                 if isActive {
-                    RoundedRectangle(cornerRadius: 10)
+                    Circle()
                         .fill(Color.white.opacity(0.20))
                 } else if hovering || configuration.isPressed {
-                    RoundedRectangle(cornerRadius: 10)
+                    Circle()
                         .fill(Color.white.opacity(configuration.isPressed ? 0.18 : 0.10))
                 }
             }
@@ -937,16 +943,16 @@ struct MediaView: View {
                             .font(.system(size: 15, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.tail)
+
+                        if media.lyrics.hasLyrics || media.lyrics.isFetching {
+                            lyricsButton
+                        }
                     }
 
                     Text(media.artist.isEmpty ? media.sourceLabel : media.artist)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white.opacity(0.65))
                         .lineLimit(1)
-                }
-
-                if media.lyrics.hasLyrics || media.lyrics.isFetching {
-                    lyricsButton
                 }
 
                 Spacer(minLength: 8)
@@ -973,17 +979,18 @@ struct MediaView: View {
             }
         } label: {
             Image(systemName: "quote.bubble")
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.white.opacity(state.showLyrics || hoveringLyricsButton ? 1 : 0.78))
-                .frame(width: 28, height: 28)
+                .frame(width: 22, height: 22)
                 .background {
                     if state.showLyrics || hoveringLyricsButton {
-                        RoundedRectangle(cornerRadius: 8)
+                        Circle()
                             .fill(Color.white.opacity(state.showLyrics ? 0.20 : 0.10))
                     }
                 }
         }
         .buttonStyle(.plain)
+        .layoutPriority(1)
         .onHover { hoveringLyricsButton = $0 }
         .accessibilityLabel(state.showLyrics ? "Hide lyrics" : "Show lyrics")
     }
