@@ -26,12 +26,46 @@ final class ShelfStore: ObservableObject {
     @discardableResult
     func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         var accepted = false
-        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-            accepted = true
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { data, _ in
-                guard let data = data as? Data,
-                      let url = URL(dataRepresentation: data, relativeTo: nil) else { return }
-                Task { @MainActor in self.add([url]) }
+        for provider in providers {
+            if provider.canLoadObject(ofClass: URL.self) {
+                accepted = true
+                _ = provider.loadObject(ofClass: URL.self) { [weak self] url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in self?.add([url]) }
+                }
+            } else if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ||
+                      provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) ||
+                      provider.hasItemConformingToTypeIdentifier(UTType.item.identifier) ||
+                      provider.hasItemConformingToTypeIdentifier("NSFilenamesPboardType") {
+                let typeId = provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) ? UTType.fileURL.identifier :
+                             (provider.hasItemConformingToTypeIdentifier("NSFilenamesPboardType") ? "NSFilenamesPboardType" :
+                             (provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) ? UTType.url.identifier : UTType.item.identifier))
+                accepted = true
+                provider.loadItem(forTypeIdentifier: typeId, options: nil) { [weak self] item, _ in
+                    if let paths = item as? [String] {
+                        let urls = paths.map { URL(fileURLWithPath: $0) }
+                        Task { @MainActor in self?.add(urls) }
+                        return
+                    } else if let paths = item as? NSArray as? [String] {
+                        let urls = paths.map { URL(fileURLWithPath: $0) }
+                        Task { @MainActor in self?.add(urls) }
+                        return
+                    }
+                    let url: URL?
+                    if let u = item as? URL {
+                        url = u
+                    } else if let u = item as? NSURL {
+                        url = u as URL
+                    } else if let d = item as? Data {
+                        url = URL(dataRepresentation: d, relativeTo: nil) ?? URL(string: String(data: d, encoding: .utf8) ?? "")
+                    } else if let s = item as? String {
+                        url = URL(string: s) ?? URL(fileURLWithPath: s)
+                    } else {
+                        url = nil
+                    }
+                    guard let url else { return }
+                    Task { @MainActor in self?.add([url]) }
+                }
             }
         }
         return accepted

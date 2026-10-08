@@ -101,8 +101,9 @@ struct EqualizerBars: View {
         let dynamicHeight: CGFloat = useGradient ? 22 : 13
         return HStack(alignment: .center, spacing: useGradient ? 2.6 : 1.5) {
             ForEach(0..<count, id: \.self) { i in
+                let raw = visualizer.levels.indices.contains(i) && visualizer.levels[i].isFinite ? CGFloat(visualizer.levels[i]) : 0
                 BarCapsule(
-                    level: min(1, sqrt(CGFloat(visualizer.levels[i])) * 1.2),
+                    level: min(1, sqrt(max(0, raw)) * 1.2),
                     active: active,
                     tint: tint,
                     barWidth: useGradient ? 3.0 : 1.8,
@@ -127,7 +128,9 @@ private struct BarCapsule: View {
     @State private var animatedHeight: CGFloat = 2
 
     private var targetHeight: CGFloat {
-        active ? minimumHeight + level * dynamicHeight : idleHeight
+        let safeLevel = level.isFinite ? max(0, min(1, level)) : 0
+        let h = active ? minimumHeight + safeLevel * dynamicHeight : idleHeight
+        return max(minimumHeight, h)
     }
 
     var body: some View {

@@ -165,10 +165,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.isFloatingPanel = true
         panel.isMovable = false
-        panel.level = NSWindow.Level(rawValue: Int(Int32.max - 2))
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         panel.collectionBehavior = [.fullScreenAuxiliary, .stationary, .canJoinAllSpaces, .ignoresCycle]
         panel.canBecomeVisibleWithoutLogin = true
         panel.ignoresMouseEvents = true
+        panel.registerForDraggedTypes([.fileURL, .URL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
 
         let root = NotchView(state: state, shelf: shelf, clipboard: clipboard, media: media,
                              pomodoro: pomodoro, calendar: calendar, agents: agents, system: system,
@@ -177,10 +178,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
         host.sizingOptions = []
+        host.registerForDraggedTypes([.fileURL, .URL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
         panel.contentView = host
         position(panel, state: state, on: screen)
         panel.orderFrontRegardless()
-        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+        if isScreenLocked {
+            NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+        }
         return panel
     }
 
@@ -377,7 +381,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let first = NotchTab.allCases.first(where: { Pref.bool($0.prefKey) }), !Pref.bool(targetState.tab.prefKey) {
                 targetState.tab = first
             }
-            if Pref.bool(Pref.media), !draggingContent { targetState.tab = .media }
+            if draggingContent && Pref.bool(Pref.shelf) {
+                targetState.tab = .shelf
+            } else if Pref.bool(Pref.media), !draggingContent {
+                targetState.tab = .media
+            }
             if interactive && openingHaptic && Pref.bool(Pref.hapticFeedback) {
                 NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
             }
@@ -435,12 +443,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cancelPendingExpansion()
             cancelAllCollapseWork()
             setExpanded(false, interactive: false, openingHaptic: false)
+            primaryPanel?.level = NSWindow.Level(rawValue: Int(Int32.max - 2))
+            for instance in additionalDisplays.values {
+                instance.panel.level = NSWindow.Level(rawValue: Int(Int32.max - 2))
+            }
+            if let primaryPanel { NotchSpaceManager.shared.notchSpace.windows.insert(primaryPanel) }
+            for instance in additionalDisplays.values {
+                NotchSpaceManager.shared.notchSpace.windows.insert(instance.panel)
+            }
             NotchSpaceManager.shared.notchSpace.show()
             primaryPanel?.orderFrontRegardless()
             for instance in additionalDisplays.values {
                 instance.panel.orderFrontRegardless()
             }
         } else {
+            primaryPanel?.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+            for instance in additionalDisplays.values {
+                instance.panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+            }
+            if let primaryPanel { NotchSpaceManager.shared.notchSpace.windows.remove(primaryPanel) }
+            for instance in additionalDisplays.values {
+                NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
+            }
             evaluateHover()
         }
     }
@@ -467,7 +491,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             reversals.removeAll()
             basket.scheduleHide()
         case .leftMouseDragged:
-            if !draggingContent, NSPasteboard(name: .drag).changeCount != dragBaseline { draggingContent = true }
+            if !draggingContent {
+                let dragPb = NSPasteboard(name: .drag)
+                let validTypes: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .string]
+                let hasValid = dragPb.types?.contains(where: validTypes.contains) ?? false
+                if (hasValid && dragPb.changeCount != dragBaseline) || (hasValid && dragPb.pasteboardItems?.isEmpty == false) {
+                    draggingContent = true
+                }
+            }
             if draggingContent { trackJiggle(dx: dx) }
         default: break
         }

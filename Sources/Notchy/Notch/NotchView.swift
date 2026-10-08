@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import QuickLookThumbnailing
 
 private struct AccessoryTransitionModifier: ViewModifier {
     let blur: CGFloat
@@ -286,10 +287,15 @@ struct NotchView: View {
             guard !media.isPlaying, media.hasTrack else { return }
             schedulePausedActivityHide()
         }
-        .onDrop(of: [UTType.fileURL], isTargeted: $state.dropTargeted) { providers in
+        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data, .item], isTargeted: $state.dropTargeted) { providers in
             guard Pref.bool(Pref.shelf) else { return false }
             state.tab = .shelf
             return shelf.handleDrop(providers)
+        }
+        .onChange(of: state.dropTargeted) { _, targeted in
+            if targeted && Pref.bool(Pref.shelf) {
+                state.tab = .shelf
+            }
         }
         .onAppear {
             updatePausedActivityTimer()
@@ -351,42 +357,105 @@ struct NotchView: View {
 struct ShelfView: View {
     @ObservedObject var shelf: ShelfStore
     let targeted: Bool
+    @State private var isTargeted = false
+
+    private var activeTargeted: Bool {
+        targeted || isTargeted
+    }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(targeted ? Color.blue : .white.opacity(0.15), style: StrokeStyle(lineWidth: 1.5, dash: [5]))
-                .background(targeted ? Color.blue.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 14))
-
             if shelf.items.isEmpty {
-                VStack(spacing: 4) {
-                    Image(systemName: "arrow.down.doc").font(.system(size: 22))
-                    Text("Drop files here").font(.system(size: 12))
-                }
-                .foregroundStyle(.white.opacity(0.5))
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        activeTargeted ? Color.blue : Color.white.opacity(0.18),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])
+                    )
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(activeTargeted ? Color.blue.opacity(0.12) : Color.white.opacity(0.03))
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .padding(.bottom, 12)
+                    .overlay {
+                        VStack(spacing: 8) {
+                            Image(systemName: "arrow.down.doc")
+                                .font(.system(size: 32, weight: .light))
+                                .foregroundStyle(activeTargeted ? Color.blue : Color.white.opacity(0.7))
+
+                            Text("Drop files here")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(Color.white.opacity(0.85))
+
+                            Text("Release to hold on shelf")
+                                .font(.system(size: 11))
+                                .foregroundStyle(Color.white.opacity(0.4))
+                        }
+                        .padding(.top, 4)
+                        .padding(.bottom, 8)
+                    }
             } else {
                 HStack(spacing: 0) {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(shelf.items) { item in ShelfItemView(item: item, shelf: shelf) }
+                        HStack(spacing: 18) {
+                            ForEach(shelf.items) { item in
+                                ShelfItemView(item: item, shelf: shelf)
+                            }
                         }
-                        .padding(10)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 8)
                     }
+
                     VStack(spacing: 8) {
                         if let message = shelf.message {
-                            Text(message).font(.system(size: 10)).foregroundStyle(.green)
+                            Text(message)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.green)
                         }
                         if shelf.items.count > 1 {
-                            Button("Zip all") { shelf.zip(shelf.items) }
-                                .buttonStyle(.plain).font(.system(size: 11, weight: .medium))
+                            Button {
+                                shelf.zip(shelf.items)
+                            } label: {
+                                Image(systemName: "archivebox.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .frame(width: 28, height: 28)
+                                    .background(Circle().fill(Color.white.opacity(0.1)))
+                            }
+                            .buttonStyle(.plain)
+                            .help("Zip all")
                         }
-                        Button("Clear") { shelf.clear() }
-                            .buttonStyle(.plain).font(.system(size: 11))
-                            .foregroundStyle(.white.opacity(0.6))
+                        Button {
+                            shelf.clear()
+                        } label: {
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .frame(width: 28, height: 28)
+                                .background(Circle().fill(Color.white.opacity(0.1)))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Clear shelf")
                     }
-                    .frame(width: 70).padding(.trailing, 6)
+                    .frame(width: 44)
+                    .padding(.trailing, 16)
+                }
+                .overlay {
+                    if activeTargeted {
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [6, 5]))
+                            .background(RoundedRectangle(cornerRadius: 16).fill(Color.blue.opacity(0.08)))
+                            .padding(.horizontal, 16)
+                            .padding(.top, 4)
+                            .padding(.bottom, 8)
+                    }
                 }
             }
+        }
+        .contentShape(Rectangle())
+        .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data, .item], isTargeted: $isTargeted) { providers in
+            shelf.handleDrop(providers)
         }
     }
 }
@@ -395,21 +464,75 @@ struct ShelfItemView: View {
     let item: ShelfItem
     @ObservedObject var shelf: ShelfStore
     @State private var hovering = false
+    @State private var thumbnail: NSImage?
+
+    private let thumbWidth: CGFloat = 92
+    private let thumbHeight: CGFloat = 60
 
     var body: some View {
-        VStack(spacing: 3) {
-            Image(nsImage: item.icon).resizable().frame(width: 44, height: 44)
-            Text(item.name).font(.system(size: 10)).lineLimit(1).frame(width: 64)
-        }
-        .padding(6)
-        .background(hovering ? Color.white.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(alignment: .topTrailing) {
-            if hovering {
-                Button { shelf.remove(item) } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .gray)
-                }.buttonStyle(.plain)
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.black.opacity(0.45))
+
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: thumbWidth, height: thumbHeight)
+                        .clipped()
+                } else {
+                    Image(nsImage: item.icon)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .frame(width: 36, height: 36)
+                }
             }
+            .frame(width: thumbWidth, height: thumbHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.white.opacity(hovering ? 0.35 : 0.12), lineWidth: 1)
+            )
+            .overlay(alignment: .topTrailing) {
+                if hovering {
+                    Button {
+                        shelf.remove(item)
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Color(white: 0.15).opacity(0.95)))
+                            .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                            .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 6, y: -6)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if hovering {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.blue))
+                        .overlay(Circle().stroke(Color.white.opacity(0.3), lineWidth: 0.5))
+                        .shadow(color: .blue.opacity(0.4), radius: 3, y: 1)
+                        .offset(y: 9)
+                }
+            }
+
+            Text(item.name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .frame(width: thumbWidth + 10)
         }
+        .padding(.top, 6)
         .onHover { hovering = $0 }
         .onDrag { NSItemProvider(object: item.url as NSURL) }
         .onTapGesture(count: 2) { NSWorkspace.shared.open(item.url) }
@@ -426,6 +549,36 @@ struct ShelfItemView: View {
             }
             Divider()
             Button("Remove") { shelf.remove(item) }
+        }
+        .task(id: item.url) {
+            if let loaded = await Self.loadThumbnail(for: item.url, size: CGSize(width: thumbWidth * 2, height: thumbHeight * 2)) {
+                thumbnail = loaded
+            }
+        }
+    }
+
+    private static func loadThumbnail(for url: URL, size: CGSize) async -> NSImage? {
+        if let type = UTType(filenameExtension: url.pathExtension), type.conforms(to: .image) {
+            if let img = NSImage(contentsOf: url) {
+                return img
+            }
+        }
+        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+        let request = QLThumbnailGenerator.Request(
+            fileAt: url,
+            size: size,
+            scale: scale,
+            representationTypes: .thumbnail
+        )
+        return await withCheckedContinuation { continuation in
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { thumbnail, _ in
+                if let cgImage = thumbnail?.cgImage {
+                    let image = NSImage(cgImage: cgImage, size: size)
+                    continuation.resume(returning: image)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }
         }
     }
 }

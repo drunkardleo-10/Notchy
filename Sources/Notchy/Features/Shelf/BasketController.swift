@@ -15,8 +15,10 @@ final class BasketController {
         panel.hasShadow = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.registerForDraggedTypes([.fileURL, .URL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
         let host = NSHostingView(rootView: BasketView(shelf: shelf))
         host.sizingOptions = []
+        host.registerForDraggedTypes([.fileURL, .URL, NSPasteboard.PasteboardType("NSFilenamesPboardType")])
         panel.contentView = host
     }
 

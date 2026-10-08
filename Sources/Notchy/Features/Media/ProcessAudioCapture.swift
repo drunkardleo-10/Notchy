@@ -6,7 +6,7 @@ import Foundation
 
 final class ProcessAudioCapture {
     private static let fftSize = 1024
-    private static let fftLog2n: vDSP_Length = 10
+    private static let fftLog2n: vDSP_Length = 9
     private static let ringCapacity = 4096
     private static let floorDB: Float = -58
     private static let ceilingDB: Float = -14
@@ -255,9 +255,11 @@ final class ProcessAudioCapture {
             let decibels = 10 * log10f(max(meanPower, 1e-12)) + pinkCompensationDB[index]
             let normalized = (max(Self.floorDB, min(Self.ceilingDB, decibels)) - Self.floorDB)
                 / (Self.ceilingDB - Self.floorDB)
-            let decayed = smoothing[index] * 0.86
-            smoothing[index] = normalized > decayed ? decayed + (normalized - decayed) * 0.58 : decayed
-            levels[index] = max(0, min(1, smoothing[index]))
+            let safeNormalized = normalized.isFinite ? normalized : 0
+            let current = smoothing[index].isFinite ? smoothing[index] : 0
+            let decayed = current * 0.86
+            smoothing[index] = safeNormalized > decayed ? decayed + (safeNormalized - decayed) * 0.58 : decayed
+            levels[index] = max(0, min(1, smoothing[index].isFinite ? smoothing[index] : 0))
         }
 
         let changed = zip(levels, lastPublished).contains { abs($0 - $1) > 0.002 }
