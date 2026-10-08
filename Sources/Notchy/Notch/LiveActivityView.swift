@@ -35,6 +35,15 @@ struct LiveActivityView: View {
             )
         } trailing: {
             ZStack {
+                EqualizerBars(
+                    active: media.isPlaying,
+                    tint: media.artworkTint,
+                    namespace: visualizerNamespace,
+                    isSource: !state.expanded
+                )
+                .blur(radius: !state.expanded && state.hoveringNotch ? 3.5 : 0)
+                .opacity(state.flashDirection != nil ? 0 : 1)
+
                 if state.flashDirection == .previous {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 11, weight: .bold))
@@ -45,30 +54,17 @@ struct LiveActivityView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white)
                         .transition(.scale.combined(with: .opacity))
-                } else {
-                    ZStack {
-                        EqualizerBars(
-                            active: media.isPlaying,
-                            tint: media.artworkTint,
-                            namespace: visualizerNamespace,
-                            isSource: !state.expanded
-                        )
-                        .blur(radius: !state.expanded && state.hoveringNotch ? 3.5 : 0)
+                }
 
-                        if !state.expanded && state.hoveringNotch {
-                            Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 10.5, weight: .bold))
-                                .foregroundStyle(.white)
-                                .shadow(color: .black.opacity(0.35), radius: 2)
-                                .transition(.scale(scale: 0.8).combined(with: .opacity))
-                        }
-                    }
-                    .transition(.opacity)
+                if !state.expanded && state.hoveringNotch && state.flashDirection == nil {
+                    Image(systemName: media.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.35), radius: 2)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
             .animation(.spring(response: 0.24, dampingFraction: 0.72), value: state.flashDirection)
-            .animation(.spring(response: 0.24, dampingFraction: 0.75), value: state.hoveringNotch)
-            .animation(.easeInOut(duration: 0.15), value: media.isPlaying)
         }
         .foregroundStyle(.white)
     }
@@ -82,7 +78,14 @@ struct EqualizerBars: View {
     var isSource: Bool = true
     @ObservedObject private var visualizer = AudioVisualizer.shared
 
+    private var width: CGFloat { useGradient ? 31.0 : 18.3 }
+    private var height: CGFloat { useGradient ? 22.0 : 11.0 }
+
     var body: some View {
+        let barsView = bars
+            .frame(width: width, height: height)
+            .clipped()
+
         Group {
             if let namespace {
                 barsView.matchedGeometryEffect(id: "mediaVisualizer", in: namespace, isSource: isSource)
@@ -90,14 +93,6 @@ struct EqualizerBars: View {
                 barsView
             }
         }
-        .animation(.smooth(duration: 0.25), value: active)
-        .animation(.linear(duration: 0.07), value: visualizer.levels)
-        .animation(.easeInOut(duration: 0.25), value: tint)
-    }
-
-    @ViewBuilder
-    private var barsView: some View {
-        bars
     }
 
     private var bars: some View {
@@ -106,18 +101,47 @@ struct EqualizerBars: View {
         let dynamicHeight: CGFloat = useGradient ? 22 : 13
         return HStack(alignment: .center, spacing: useGradient ? 2.6 : 1.5) {
             ForEach(0..<count, id: \.self) { i in
-                let level = min(1, sqrt(CGFloat(visualizer.levels[i])) * 1.2)
-                Capsule()
-                    .fill(tint)
-                    .frame(
-                        width: useGradient ? 3.0 : 1.8,
-                        height: active
-                            ? minimumHeight + level * dynamicHeight
-                            : (useGradient ? 4 : 2)
-                    )
+                BarCapsule(
+                    level: min(1, sqrt(CGFloat(visualizer.levels[i])) * 1.2),
+                    active: active,
+                    tint: tint,
+                    barWidth: useGradient ? 3.0 : 1.8,
+                    minimumHeight: minimumHeight,
+                    dynamicHeight: dynamicHeight,
+                    idleHeight: useGradient ? 4 : 2
+                )
             }
         }
-        .frame(height: useGradient ? 22 : 11)
+    }
+}
+
+private struct BarCapsule: View {
+    let level: CGFloat
+    let active: Bool
+    let tint: Color
+    let barWidth: CGFloat
+    let minimumHeight: CGFloat
+    let dynamicHeight: CGFloat
+    let idleHeight: CGFloat
+
+    @State private var animatedHeight: CGFloat = 2
+
+    private var targetHeight: CGFloat {
+        active ? minimumHeight + level * dynamicHeight : idleHeight
+    }
+
+    var body: some View {
+        Capsule()
+            .fill(tint)
+            .frame(width: barWidth, height: animatedHeight)
+            .onChange(of: targetHeight) { _, newHeight in
+                withAnimation(.linear(duration: 0.07)) {
+                    animatedHeight = newHeight
+                }
+            }
+            .onAppear {
+                animatedHeight = targetHeight
+            }
     }
 }
 
