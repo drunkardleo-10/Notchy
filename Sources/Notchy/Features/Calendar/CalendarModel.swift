@@ -16,6 +16,8 @@ final class CalendarModel: ObservableObject {
     enum Access { case unknown, granted, denied }
 
     @Published private(set) var events: [CalendarEvent] = []
+    @Published private(set) var dayEvents: [CalendarEvent] = []
+    @Published private(set) var selectedDate = Calendar.current.startOfDay(for: Date())
     @Published private(set) var access: Access = .unknown
 
     var onMeetingSoon: ((CalendarEvent, Int) -> Void)?
@@ -59,19 +61,39 @@ final class CalendarModel: ObservableObject {
 
     func refresh() {
         updateAccess()
-        guard access == .granted, Pref.bool(Pref.calendar) else { events = []; return }
+        guard access == .granted, Pref.bool(Pref.calendar) else { events = []; dayEvents = []; return }
         let now = Date()
+        loadDayEvents()
         let predicate = store.predicateForEvents(withStart: Calendar.current.startOfDay(for: now),
                                                  end: now.addingTimeInterval(36 * 3600), calendars: nil)
         events = store.events(matching: predicate)
             .filter { $0.endDate > now && $0.status != .canceled }
             .sorted { $0.startDate < $1.startDate }
             .prefix(8)
-            .map { e in
-                CalendarEvent(id: e.eventIdentifier ?? UUID().uuidString, title: e.title ?? "Untitled",
-                              start: e.startDate, end: e.endDate, isAllDay: e.isAllDay,
-                              color: e.calendar.color ?? .systemBlue, joinURL: Self.meetingLink(in: e))
-            }
+            .map(Self.makeEvent)
+    }
+
+    func select(_ date: Date) {
+        selectedDate = Calendar.current.startOfDay(for: date)
+        loadDayEvents()
+    }
+
+    private func loadDayEvents() {
+        guard access == .granted else { dayEvents = []; return }
+        let start = selectedDate
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        dayEvents = store.events(matching: predicate)
+            .filter { $0.status != .canceled }
+            .sorted { $0.startDate < $1.startDate }
+            .prefix(20)
+            .map(Self.makeEvent)
+    }
+
+    private static func makeEvent(_ e: EKEvent) -> CalendarEvent {
+        CalendarEvent(id: e.eventIdentifier ?? UUID().uuidString, title: e.title ?? "Untitled",
+                      start: e.startDate, end: e.endDate, isAllDay: e.isAllDay,
+                      color: e.calendar.color ?? .systemBlue, joinURL: meetingLink(in: e))
     }
 
     private func checkUpcoming() {

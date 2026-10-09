@@ -56,7 +56,6 @@ struct NotchView: View {
     @ObservedObject var calendar: CalendarModel
     @ObservedObject var agents: AgentMonitor
     @ObservedObject var system: SystemMonitor
-    @ObservedObject var shortcuts: ShortcutsModel
     @ObservedObject var highAlert: HighAlertModel
 
     @Namespace private var albumArtNamespace
@@ -99,8 +98,8 @@ struct NotchView: View {
         if pomodoro.started {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
-                leadingWidth: HUDLayout.sideWidth,
-                trailingWidth: HUDLayout.sideWidth
+                leadingWidth: PomodoroLayout.sideWidth,
+                trailingWidth: PomodoroLayout.sideWidth
             )
         }
         guard showMediaActivity else { return nil }
@@ -336,12 +335,12 @@ struct NotchView: View {
                 case .calendar: CalendarView(calendar: calendar)
                 case .timer: TimerView(pomodoro: pomodoro)
                 case .claude: ClaudeView(agents: agents)
-                case .shortcuts: ShortcutsView(shortcuts: shortcuts)
                 case .system: SystemView(system: system)
                 case .mirror: MirrorView()
                 case .tools: ToolsView(highAlert: highAlert)
                 }
             }
+            .padding(.horizontal, activeTab == .media ? 0 : 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.asymmetric(
                 insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
@@ -580,71 +579,6 @@ struct ShelfItemView: View {
                 }
             }
         }
-    }
-}
-
-struct ClipboardView: View {
-    @ObservedObject var clipboard: ClipboardManager
-    @State private var query = ""
-    @State private var status: String?
-
-    private var filtered: [ClipItem] {
-        let sorted = clipboard.items.sorted { $0.favorite && !$1.favorite }
-        guard !query.isEmpty else { return sorted }
-        return sorted.filter { $0.text?.localizedCaseInsensitiveContains(query) ?? false }
-    }
-
-    var body: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.white.opacity(0.5))
-                TextField("Search clipboard history", text: $query).textFieldStyle(.plain).font(.system(size: 12))
-                if let status { Text(status).font(.system(size: 10)).foregroundStyle(.green) }
-                Button("Clear") { clipboard.clearUnfavorited() }
-                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
-            }
-            .padding(.horizontal, 10).padding(.vertical, 5)
-            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-
-            if filtered.isEmpty {
-                Spacer()
-                Text("Nothing copied yet").font(.system(size: 12)).foregroundStyle(.white.opacity(0.5))
-                Spacer()
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 4) { ForEach(filtered) { row($0) } }
-                }
-            }
-        }
-    }
-
-    private func flash(_ message: String) {
-        status = message
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { status = nil }
-    }
-
-    private func row(_ item: ClipItem) -> some View {
-        HStack(spacing: 8) {
-            if let text = item.text {
-                Text(text).font(.system(size: 11)).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-            } else if let img = clipboard.image(for: item) {
-                Image(nsImage: img).resizable().scaledToFit().frame(height: 30)
-                Spacer()
-                Button("OCR") { clipboard.ocr(item) { flash($0 ? "Text copied" : "No text found") } }
-                    .buttonStyle(.plain).font(.system(size: 10, weight: .semibold))
-                    .padding(.horizontal, 6).padding(.vertical, 2).background(.white.opacity(0.15), in: Capsule())
-            }
-            Button { clipboard.toggleFavorite(item) } label: {
-                Image(systemName: item.favorite ? "star.fill" : "star").foregroundStyle(item.favorite ? .yellow : .white.opacity(0.4))
-            }.buttonStyle(.plain)
-            Button { clipboard.delete(item) } label: {
-                Image(systemName: "trash").foregroundStyle(.white.opacity(0.4))
-            }.buttonStyle(.plain)
-        }
-        .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-        .contentShape(Rectangle())
-        .onTapGesture { clipboard.copy(item); flash("Copied") }
     }
 }
 

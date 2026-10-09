@@ -14,7 +14,6 @@ struct SettingsView: View {
     @AppStorage(Pref.calendar) private var calendar = false
     @AppStorage(Pref.claude) private var claude = false
     @AppStorage(Pref.system) private var system = false
-    @AppStorage(Pref.shortcuts) private var shortcuts = false
     @AppStorage(Pref.mirror) private var mirror = false
 
     @AppStorage(Pref.liveActivity) private var liveActivity = true
@@ -55,7 +54,7 @@ struct SettingsView: View {
                         ModulesSettingsTab(
                             media: $media, shelf: $shelf, basket: $basket, clipboard: $clipboard,
                             timer: $timer, tools: $tools, calendar: $calendar, claude: $claude,
-                            system: $system, shortcuts: $shortcuts, mirror: $mirror
+                            system: $system, mirror: $mirror
                         )
                     case .media:
                         MediaSettingsTab(

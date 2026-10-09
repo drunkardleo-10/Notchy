@@ -24,7 +24,6 @@ enum Pref {
     static let calendar = "enableCalendar"
     static let claude = "enableClaude"
     static let system = "enableSystem"
-    static let shortcuts = "enableShortcuts"
     static let mirror = "enableMirror"
     static let volumeHUD = "enableVolumeHUD"
     static let volumeHUDStyle = "volumeHUDStyle"
@@ -37,7 +36,7 @@ enum Pref {
             media: true,
             shelf: false, basket: false, clipboard: false,
             timer: false, tools: false,
-            calendar: false, claude: false, system: false, shortcuts: false, mirror: false,
+            calendar: false, claude: false, system: false, mirror: false,
             hoverOpen: true, notchDisplayMode: NotchDisplayMode.main.rawValue,
             expandDelay: 0.25, notchAnimationSpeed: NotchAnimationSpeed.normal.rawValue,
             hapticFeedback: true, clipboardLimit: 50, islandMode: false,

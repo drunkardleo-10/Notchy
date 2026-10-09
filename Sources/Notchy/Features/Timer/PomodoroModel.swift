@@ -5,7 +5,6 @@ final class PomodoroModel: ObservableObject {
     enum Phase {
         case focus, rest
         var title: String { self == .focus ? "Focus" : "Break" }
-        var icon: String { self == .focus ? "brain.head.profile" : "cup.and.saucer.fill" }
     }
 
     @Published var phase: Phase = .focus

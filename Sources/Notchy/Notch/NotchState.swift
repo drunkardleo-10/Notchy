@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum NotchTab: String, CaseIterable, Identifiable {
-    case media, shelf, clipboard, calendar, timer, claude, shortcuts, system, mirror, tools
+    case media, shelf, clipboard, calendar, timer, claude, system, mirror, tools
     var id: String { rawValue }
 
     var title: String {
@@ -13,7 +13,6 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .calendar: "Calendar"
         case .timer: "Timer"
         case .claude: "Claude"
-        case .shortcuts: "Shortcuts"
         case .system: "System"
         case .mirror: "Mirror"
         case .tools: "Tools"
@@ -28,7 +27,6 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .calendar: "calendar"
         case .timer: "timer"
         case .claude: "sparkles"
-        case .shortcuts: "bolt.fill"
         case .system: "cpu"
         case .mirror: "camera.fill"
         case .tools: "wrench.and.screwdriver"
@@ -43,7 +41,6 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .calendar: Pref.calendar
         case .timer: Pref.timer
         case .claude: Pref.claude
-        case .shortcuts: Pref.shortcuts
         case .system: Pref.system
         case .mirror: Pref.mirror
         case .tools: Pref.tools

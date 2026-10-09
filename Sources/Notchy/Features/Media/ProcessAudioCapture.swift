@@ -287,7 +287,7 @@ final class ProcessAudioCapture {
             let lowerBin = max(1, Int((lowerHz / nyquist) * Double(halfSize)))
             let upperBin = max(lowerBin + 1, min(halfSize, Int((upperHz / nyquist) * Double(halfSize))))
             let centerHz = sqrt(lowerHz * upperHz)
-            let pinkAdjustment = Float(3 * log2(centerHz / 1_000))
+            let pinkAdjustment = Float(4.5 * log2(centerHz / 1_000))
             return (lowerBin..<upperBin, pinkAdjustment)
         }
         bandRanges = bands.map(\.0)

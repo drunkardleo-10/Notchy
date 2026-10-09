@@ -97,8 +97,8 @@ struct EqualizerBars: View {
 
     private var bars: some View {
         let count = AudioVisualizer.barCount
-        let minimumHeight: CGFloat = useGradient ? 3.5 : 2
-        let dynamicHeight: CGFloat = useGradient ? 22 : 13
+        let minimumHeight: CGFloat = useGradient ? 3.5 : 3
+        let dynamicHeight: CGFloat = height - minimumHeight
         return HStack(alignment: .center, spacing: useGradient ? 2.6 : 1.5) {
             ForEach(0..<count, id: \.self) { i in
                 let raw = visualizer.levels.indices.contains(i) && visualizer.levels[i].isFinite ? CGFloat(visualizer.levels[i]) : 0
@@ -106,10 +106,9 @@ struct EqualizerBars: View {
                     level: min(1, sqrt(max(0, raw)) * 1.2),
                     active: active,
                     tint: tint,
-                    barWidth: useGradient ? 3.0 : 1.8,
                     minimumHeight: minimumHeight,
                     dynamicHeight: dynamicHeight,
-                    idleHeight: useGradient ? 4 : 2
+                    idleHeight: minimumHeight
                 )
             }
         }
@@ -120,7 +119,6 @@ private struct BarCapsule: View {
     let level: CGFloat
     let active: Bool
     let tint: Color
-    let barWidth: CGFloat
     let minimumHeight: CGFloat
     let dynamicHeight: CGFloat
     let idleHeight: CGFloat
@@ -136,7 +134,7 @@ private struct BarCapsule: View {
     var body: some View {
         Capsule()
             .fill(tint)
-            .frame(width: barWidth, height: animatedHeight)
+            .frame(height: animatedHeight)
             .onChange(of: targetHeight) { _, newHeight in
                 withAnimation(.linear(duration: 0.07)) {
                     animatedHeight = newHeight

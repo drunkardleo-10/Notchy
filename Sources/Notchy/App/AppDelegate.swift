@@ -40,7 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let calendar = CalendarModel()
     let agents = AgentMonitor()
     let system = SystemMonitor()
-    let shortcuts = ShortcutsModel()
 
     private var hudMonitor: HUDMonitor?
     private var primaryPanel: NotchPanel!
@@ -173,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let root = NotchView(state: state, shelf: shelf, clipboard: clipboard, media: media,
                              pomodoro: pomodoro, calendar: calendar, agents: agents, system: system,
-                             shortcuts: shortcuts, highAlert: highAlert)
+                             highAlert: highAlert)
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
@@ -182,9 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = host
         position(panel, state: state, on: screen)
         panel.orderFrontRegardless()
-        if isScreenLocked {
-            NotchSpaceManager.shared.notchSpace.windows.insert(panel)
-        }
+        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
         return panel
     }
 
@@ -460,10 +457,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             primaryPanel?.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
             for instance in additionalDisplays.values {
                 instance.panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
-            }
-            if let primaryPanel { NotchSpaceManager.shared.notchSpace.windows.remove(primaryPanel) }
-            for instance in additionalDisplays.values {
-                NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
             }
             evaluateHover()
         }

@@ -89,6 +89,10 @@ final class ClipboardManager: ObservableObject {
         if let f = item.imageFile { try? FileManager.default.removeItem(at: imageDir.appendingPathComponent(f)) }
     }
 
+    func imageURL(for item: ClipItem) -> URL? {
+        item.imageFile.map { imageDir.appendingPathComponent($0) }
+    }
+
     func image(for item: ClipItem) -> NSImage? {
         item.imageFile.flatMap { NSImage(contentsOf: imageDir.appendingPathComponent($0)) }
     }

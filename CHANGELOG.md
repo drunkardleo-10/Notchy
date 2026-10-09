@@ -18,5 +18,5 @@ First release.
 - Media from Music, Spotify and browser tabs, with seek, shuffle, repeat and a collapsed-notch live activity
 - HUDs: volume, brightness, AirPods, battery, Caps Lock, lock/unlock
 - Pomodoro timer, High Alert, emoji picker
-- Calendar with meeting links, Claude Code status, Shortcuts launcher, system monitor, camera mirror
+- Calendar with meeting links, Claude Code status, system monitor, camera mirror
 - Settings with per-feature toggles

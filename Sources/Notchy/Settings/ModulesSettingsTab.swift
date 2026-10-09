@@ -10,11 +10,10 @@ struct ModulesSettingsTab: View {
     @Binding var calendar: Bool
     @Binding var claude: Bool
     @Binding var system: Bool
-    @Binding var shortcuts: Bool
     @Binding var mirror: Bool
 
     private var enabledCount: Int {
-        [media, shelf, clipboard, timer, calendar, claude, shortcuts, system, mirror, tools].filter { $0 }.count
+        [media, shelf, clipboard, timer, calendar, claude, system, mirror, tools].filter { $0 }.count
     }
 
     var body: some View {
@@ -42,13 +41,13 @@ struct ModulesSettingsTab: View {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             media = true; shelf = false; basket = false; clipboard = false
                             timer = false; tools = false; calendar = false; claude = false
-                            shortcuts = false; system = false; mirror = false
+                            system = false; mirror = false
                         }
                     }
                     QuickActionButton(title: "Enable All", prominent: false) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                             media = true; shelf = true; clipboard = true; timer = true
-                            tools = true; calendar = true; claude = true; shortcuts = true
+                            tools = true; calendar = true; claude = true
                             system = true; mirror = true
                         }
                     }
@@ -103,7 +102,6 @@ struct ModulesSettingsTab: View {
                     CardDivider()
                     ModuleRow(icon: "sparkles", color: .purple, title: "Claude Code Monitor", subtitle: "Live session status and alerts", isOn: $claude)
                     CardDivider()
-                    ModuleRow(icon: "bolt.fill", color: .yellow, title: "Shortcuts Launcher", subtitle: "Favorite macOS Shortcuts", isOn: $shortcuts)
                     CardDivider()
                     ModuleRow(icon: "cpu", color: .teal, title: "System Monitor", subtitle: "CPU, memory and stats", isOn: $system)
                     CardDivider()
