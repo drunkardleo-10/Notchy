@@ -4,6 +4,12 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.2 — 2026-10-09
+
+- Calendar redesigned with a month grid on the left and a day agenda with the next day on the right
+- Larger calendar text, and the calendar returns to today every time the notch opens
+- Settings button replaces the device icon on the idle "Not Playing" screen
+
 ## 1.0.1 — 2026-10-09
 
 - Automatic updates via Sparkle and GitHub Releases, with a version row and "Check for Updates" in Settings
