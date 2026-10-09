@@ -183,7 +183,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = host
         position(panel, state: state, on: screen)
         panel.orderFrontRegardless()
-        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+        if isScreenLocked {
+            NotchSpaceManager.shared.notchSpace.windows.insert(panel)
+        }
         return panel
     }
 
@@ -464,6 +466,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             primaryPanel?.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
             for instance in additionalDisplays.values {
                 instance.panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self, !self.isScreenLocked else { return }
+                if let primaryPanel = self.primaryPanel { NotchSpaceManager.shared.notchSpace.windows.remove(primaryPanel) }
+                for instance in self.additionalDisplays.values {
+                    NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
+                }
             }
             evaluateHover()
         }

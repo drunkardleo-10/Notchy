@@ -25,9 +25,9 @@ struct ShelfView: View {
                         RoundedRectangle(cornerRadius: 16)
                             .fill(activeTargeted ? Color.blue.opacity(0.12) : Color.white.opacity(0.03))
                     )
-                    .padding(.horizontal, 24)
-                    .padding(.top, 8)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, 4)
+                    .padding(.top, 2)
+                    .padding(.bottom, 0)
                     .overlay {
                         VStack(spacing: 8) {
                             Image(systemName: "arrow.down.doc")
