@@ -31,7 +31,8 @@ struct LiveActivityView: View {
                 isSource: !state.expanded,
                 skipAnimationID: media.artworkSkipAnimationID,
                 skipDirection: media.artworkSkipDirection,
-                skipArtwork: media.artworkSkipArtwork
+                skipArtwork: media.artworkSkipArtwork,
+                paused: !media.isPlaying
             )
         } trailing: {
             ZStack {

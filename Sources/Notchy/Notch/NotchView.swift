@@ -364,6 +364,8 @@ struct ArtworkView: View {
     var skipAnimationID: Int = 0
     var skipDirection: NotchSwipeDirection? = nil
     var skipArtwork: NSImage? = nil
+    var paused = false
+    var onTap: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var flipAngle: Double = 0
@@ -395,6 +397,11 @@ struct ArtworkView: View {
             perspective: 0.72
         )
         .blur(radius: flipBlur)
+        .scaleEffect(paused ? 0.92 : 1)
+        .opacity(paused ? 0.7 : 1)
+        .animation(.easeInOut(duration: 0.3), value: paused)
+        .contentShape(Rectangle())
+        .onTapGesture { onTap?() }
         .onChange(of: skipAnimationID) { _, newID in
             guard newID != 0, activeFlipID != newID, !reduceMotion, let skipDirection else { return }
             activeFlipID = newID
@@ -796,7 +803,9 @@ struct MediaView: View {
                     showsBorder: true,
                     skipAnimationID: media.artworkSkipAnimationID,
                     skipDirection: media.artworkSkipDirection,
-                    skipArtwork: media.artworkSkipArtwork
+                    skipArtwork: media.artworkSkipArtwork,
+                    paused: !media.isPlaying,
+                    onTap: { media.openApp() }
                 )
 
                 VStack(alignment: .leading, spacing: 2) {

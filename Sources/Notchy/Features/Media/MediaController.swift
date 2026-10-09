@@ -1279,11 +1279,18 @@ final class MediaController: ObservableObject {
     }
 
     func openApp() {
-        if let n = native {
-            let bundleID = n.app == "Spotify" ? "com.spotify.client" : "com.apple.Music"
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-            }
+        let bundleID: String?
+        if let n = native, !activeIsBrowser, !activeIsSystemNowPlaying {
+            bundleID = n.app == "Spotify" ? "com.spotify.client" : "com.apple.Music"
+        } else if activeIsSystemNowPlaying, let id = systemNowPlayingTrack?.bundleIdentifier {
+            bundleID = id
+        } else if activeIsBrowser, let b = browserTrack {
+            bundleID = BrowserMedia.bundleID(forApp: b.app)
+        } else {
+            bundleID = systemNowPlayingTrack?.bundleIdentifier
         }
+        guard let bundleID,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 }
