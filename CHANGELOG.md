@@ -2,21 +2,20 @@
 
 Versions follow [Semantic Versioning](https://semver.org). The version lives in the `VERSION` file;
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
-`git tag v<version>`, run `./package.sh` and attach the zip to the release.
+`git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
-## Unreleased
+## 1.0.0 — 2026-10-09
 
-- Internal restructure: sources grouped into App, Notch, Features, System and Settings folders; no user-facing changes
+First official major release.
 
-## 0.1.0 — 2026-10-03
-
-First release.
-
-- Notch overlay with hover-to-open; Dynamic Island pill on Macs without a notch
-- Shelf (drag in/out, AirDrop, zip, image conversion) and floating basket
-- Clipboard manager with search, favorites and OCR
-- Media from Music, Spotify and browser tabs, with seek, shuffle, repeat and a collapsed-notch live activity
-- HUDs: volume, brightness, AirPods, battery, Caps Lock, lock/unlock
-- Pomodoro timer, High Alert, emoji picker
-- Calendar with meeting links, Claude Code status, system monitor, camera mirror
-- Settings with per-feature toggles
+- Dynamic Notch & Island overlay with hover-to-open, smooth spring animations, and multi-display support
+- Dynamic Glass visual material system with custom glass tint, blur, and HUD styling
+- Shelf with drag-and-drop file staging, floating basket controller, AirDrop, zip, and image conversion
+- Clipboard Manager with thumbnail previews, favorites pinning, Vision OCR text extraction, and dissolve animations
+- Real-time Audio Visualizer and Media Controller for Apple Music, Spotify, and browser media tabs with seek, shuffle, repeat, and lyrics support
+- System HUD overlays replacing native macOS HUDs for volume, display brightness, keyboard backlight, lock screen, and Bluetooth/AirPods battery status
+- Pomodoro timer with duration ruler, phase indicator, and high alert notifications
+- Calendar integration with upcoming events timeline, week strip, and one-click meeting launcher
+- Live Claude Code AI background task monitor
+- Quick camera mirror dropdown for pre-meeting video checks
+- Settings panel with per-module customization, hotkeys, and appearance controls

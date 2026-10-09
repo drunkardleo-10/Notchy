@@ -2,11 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Single source of truth for the version: the VERSION file (tag releases as v<version>).
 VERSION=$(tr -d '[:space:]' < VERSION)
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 
-# BIN lets package.sh pass in a prebuilt (universal) binary; otherwise build for this machine.
 if [ -z "${BIN:-}" ]; then
   swift build -c release
   BIN=.build/release/notchy
