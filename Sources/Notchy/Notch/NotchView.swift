@@ -766,7 +766,7 @@ struct MediaView: View {
 
     var body: some View {
         if !media.hasTrack {
-            EmptyMediaView()
+            EmptyMediaView(onPlay: { media.playPause() })
         } else {
             HStack(spacing: 0) {
                 playerSection
@@ -956,18 +956,6 @@ struct MediaView: View {
                 .buttonStyle(MediaControlButtonStyle())
             }
         }
-    }
-}
-
-struct EmptyMediaView: View {
-    var body: some View {
-        VStack(spacing: 4) {
-            Image(systemName: "music.note").font(.system(size: 20))
-            Text("Nothing playing").font(.system(size: 12, weight: .medium))
-            Text("Play something in Music, Spotify or a browser tab").font(.system(size: 10))
-        }
-        .foregroundStyle(.white.opacity(0.5))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
