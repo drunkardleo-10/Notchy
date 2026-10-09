@@ -14,6 +14,21 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/notchy"
 
+SPARKLE_FRAMEWORK=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+mkdir -p "$APP/Contents/Frameworks"
+ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/notchy" 2>/dev/null || true
+
+SPARKLE_KEYS=""
+if [ -s SPARKLE_PUBLIC_KEY ]; then
+  SPARKLE_KEYS="<key>SUFeedURL</key><string>https://github.com/drunkardleo-10/Notchy/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key><string>$(tr -d '[:space:]' < SPARKLE_PUBLIC_KEY)</string>
+  <key>SUEnableAutomaticChecks</key><true/>
+  <key>SUScheduledCheckInterval</key><integer>86400</integer>"
+else
+  echo "warning: SPARKLE_PUBLIC_KEY missing, auto-update disabled in this build"
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,6 +41,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  $SPARKLE_KEYS
   <key>NSCalendarsFullAccessUsageDescription</key><string>notchy shows your upcoming events and meeting links in the notch.</string>
   <key>NSCalendarsUsageDescription</key><string>notchy shows your upcoming events and meeting links in the notch.</string>
   <key>NSCameraUsageDescription</key><string>notchy can show a quick camera mirror in the notch.</string>
@@ -35,5 +51,10 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
+SPARKLE_B="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+for item in "$SPARKLE_B"/XPCServices/*.xpc "$SPARKLE_B/Updater.app" "$SPARKLE_B/Autoupdate"; do
+  [ -e "$item" ] && codesign --force --sign - "$item"
+done
+codesign --force --sign - "$APP/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign - "$APP"
 echo "Built $APP — run: open $APP"

@@ -4,6 +4,7 @@ import ServiceManagement
 struct SettingsView: View {
     var onGlassPreviewChanged: (Bool) -> Void = { _ in }
     var onDisplayConfigurationChanged: () -> Void = {}
+    var onCheckForUpdates: () -> Void = {}
 
     @AppStorage(Pref.media) private var media = true
     @AppStorage(Pref.shelf) private var shelf = false
@@ -85,7 +86,8 @@ struct SettingsView: View {
                             limit: $limit,
                             launchAtLogin: $launchAtLogin,
                             externalDisplays: externalDisplays,
-                            onGlassPreviewChanged: onGlassPreviewChanged
+                            onGlassPreviewChanged: onGlassPreviewChanged,
+                            onCheckForUpdates: onCheckForUpdates
                         )
                     }
                 }

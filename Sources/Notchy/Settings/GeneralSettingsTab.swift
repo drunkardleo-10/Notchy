@@ -181,6 +181,7 @@ struct GeneralSettingsTab: View {
     @Binding var launchAtLogin: Bool
     let externalDisplays: [NSScreen]
     var onGlassPreviewChanged: (Bool) -> Void
+    var onCheckForUpdates: () -> Void = {}
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -282,8 +283,10 @@ struct GeneralSettingsTab: View {
                         }
                     }
                 }
+                AboutSettingsCard(onCheckForUpdates: onCheckForUpdates)
             }
             .padding(.top, 4)
+            .padding(.bottom, 4)
         }
         .transition(.opacity.combined(with: .move(edge: .trailing)))
     }

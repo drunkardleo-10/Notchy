@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var basket: BasketController!
     private var statusItem: NSStatusItem!
+    private let updater = AppUpdater()
     private var settingsWindow: NSWindow?
     private var monitors: [Any] = []
     private var expandWork: DispatchWorkItem?
@@ -86,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         basket = BasketController(shelf: shelf)
         setUpPanel()
         setUpStatusItem()
+        updater.start()
         setUpMonitors()
         hudMonitor = HUDMonitor(states: { [weak self] in self?.allNotchStates ?? [] })
         hudMonitor?.onLockStateChanged = { [weak self] isLocked in
@@ -314,9 +316,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Notch", action: #selector(toggleNotch), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "Check for Updates…", action: #selector(AppUpdater.checkForUpdates), keyEquivalent: "").target = updater
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit notchy", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.items.forEach { $0.target = $0.action == #selector(NSApplication.terminate(_:)) ? NSApp : self }
+        menu.items.filter { $0.target == nil }.forEach { $0.target = $0.action == #selector(NSApplication.terminate(_:)) ? NSApp : self }
         statusItem.menu = menu
     }
 
@@ -343,6 +346,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.setGlassPreview(editing)
             }, onDisplayConfigurationChanged: { [weak self] in
                 self?.configureDisplayMode()
+            }, onCheckForUpdates: { [weak self] in
+                self?.updater.checkForUpdates()
             })
             let w = NSWindow(contentViewController: NSHostingController(rootView: settings))
             w.title = "notchy Settings"
