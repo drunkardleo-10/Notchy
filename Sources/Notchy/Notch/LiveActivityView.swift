@@ -3,8 +3,12 @@ import SwiftUI
 enum LiveActivityLayout {
     static let sideWidth: CGFloat = 46
 
-    static func size(notch: CGSize) -> CGSize {
-        NotchAccessoryLayout.size(notch: notch, leadingWidth: sideWidth, trailingWidth: sideWidth)
+    static let peekExtraHeight: CGFloat = 24
+
+    static func size(notch: CGSize, peeking: Bool = false) -> CGSize {
+        let base = NotchAccessoryLayout.size(notch: notch, leadingWidth: sideWidth, trailingWidth: sideWidth)
+        guard peeking else { return base }
+        return CGSize(width: base.width, height: base.height + peekExtraHeight)
     }
 }
 
@@ -15,9 +19,32 @@ struct LiveActivityView: View {
     var visualizerNamespace: Namespace.ID? = nil
     @ObservedObject var state: NotchState
 
+    private var peeking: Bool { state.showsTrackPeek }
     private var side: CGFloat { LiveActivityLayout.sideWidth }
 
+    private var peekTitle: String {
+        media.artist.isEmpty ? media.title : "\(media.title) · \(media.artist)"
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
+            accessory
+            if peeking {
+                Text(peekTitle)
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 18)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: LiveActivityLayout.peekExtraHeight - 4, alignment: .center)
+                    .transition(.opacity.animation(.easeOut(duration: 0.18).delay(0.06)))
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var accessory: some View {
         NotchAccessory(
             notch: notch,
             leadingWidth: side,

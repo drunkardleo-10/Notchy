@@ -103,7 +103,7 @@ struct NotchView: View {
             )
         }
         guard showMediaActivity else { return nil }
-        return LiveActivityLayout.size(notch: state.notchSize)
+        return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
     private var collapsedHorizontalOffset: CGFloat {
@@ -281,6 +281,14 @@ struct NotchView: View {
         .animation(expansionAnimation, value: state.hud?.id)
         .animation(expansionAnimation, value: volumeHUDStyleRawValue)
         .animation(expansionAnimation, value: liveSize != nil)
+        .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
+        .onChange(of: media.title) { _, title in
+            guard !title.isEmpty, showMediaActivity, state.hud == nil, !pomodoro.started else { return }
+            state.announceTrack()
+        }
+        .onChange(of: state.expanded) { _, expanded in
+            if expanded { state.cancelTrackAnnouncement() }
+        }
         .onChange(of: media.isPlaying) { _, _ in updatePausedActivityTimer() }
         .onChange(of: media.hasTrack) { _, _ in updatePausedActivityTimer() }
         .onChange(of: pausedActivityTimeout) { _, _ in

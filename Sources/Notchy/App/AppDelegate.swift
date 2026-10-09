@@ -398,11 +398,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if expanded {
             withAnimation(NotchAnimation.notchOpen(for: targetPanel.screen)) {
                 targetState.hoveringNotch = false
+                targetState.hoveringArtwork = false
                 targetState.expanded = true
             }
         } else {
             withAnimation(NotchAnimation.notchClose(for: targetPanel.screen), completionCriteria: .logicallyComplete) {
                 targetState.hoveringNotch = false
+                targetState.hoveringArtwork = false
                 targetState.expanded = false
             } completion: { [weak self] in
                 guard let self else { return }
@@ -558,6 +560,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if mode == .all {
             for (id, instance) in displayInstances where id != activeDisplayID {
                 instance.state.hoveringNotch = false
+                instance.state.hoveringArtwork = false
             }
             for (id, instance) in displayInstances where instance.state.expanded {
                 if pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
@@ -592,11 +595,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
         let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
-        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8)
+        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8) + (state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
         let isHovering = hot && allowedDisplay
         updateHoveringNotch(isHovering)
+        updateHoveringArtwork(isHovering && isMouseInLeadingLiveActivity(loc))
         let canOpenOnHover = Pref.bool(Pref.hoverOpen) || draggingContent
         guard isHovering, canOpenOnHover else {
             cancelPendingExpansion()
@@ -688,6 +692,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard shouldHover, Pref.bool(Pref.hapticFeedback) else { return }
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+    }
+
+    private func updateHoveringArtwork(_ hovering: Bool) {
+        let shouldHover = hovering && state.hoveringNotch && !state.expanded
+        guard state.hoveringArtwork != shouldHover else { return }
+        withAnimation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78)) {
+            state.hoveringArtwork = shouldHover
+        }
+    }
+
+    private func isMouseInLeadingLiveActivity(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let liveShowing = Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack && !pomodoro.started
+        guard liveShowing else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+        let maxX = f.midX - notch.width / 2 + 4
+        let minX = maxX - LiveActivityLayout.sideWidth - 10
+        let extraY = state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0
+        return loc.x >= minX && loc.x <= maxX && loc.y >= f.maxY - notch.height - 14 - extraY && loc.y <= f.maxY + 4
     }
 
     private func isMouseInNotch(_ loc: NSPoint) -> Bool {

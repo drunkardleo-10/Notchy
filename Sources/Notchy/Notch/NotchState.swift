@@ -100,6 +100,29 @@ final class NotchState: ObservableObject {
 
     @Published var expanded = false
     @Published var hoveringNotch = false
+    @Published var hoveringArtwork = false
+    @Published var announcingTrack = false
+    private var announceWork: DispatchWorkItem?
+
+    var showsTrackPeek: Bool { (hoveringArtwork || announcingTrack) && !expanded }
+
+    func announceTrack(for duration: TimeInterval = 2.6) {
+        guard !expanded else { return }
+        announceWork?.cancel()
+        withAnimation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78)) { announcingTrack = true }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            withAnimation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78)) { self.announcingTrack = false }
+        }
+        announceWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+
+    func cancelTrackAnnouncement() {
+        announceWork?.cancel()
+        announceWork = nil
+        announcingTrack = false
+    }
     @Published var hoveringLyrics = false
     @Published var tab: NotchTab = .media
     @Published var tabNavigationDirection = 1
