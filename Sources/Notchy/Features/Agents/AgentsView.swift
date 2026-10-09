@@ -253,9 +253,17 @@ private struct AgentMark: View {
     private var appIcon: NSImage? {
         guard let path = kind.appPath else { return nil }
         if let cached = Self.cache.object(forKey: path as NSString) { return cached }
-        let icon = NSWorkspace.shared.icon(forFile: path)
+        let icon = Self.bundleIcon(at: path) ?? NSWorkspace.shared.icon(forFile: path)
         Self.cache.setObject(icon, forKey: path as NSString)
         return icon
+    }
+
+    private static func bundleIcon(at path: String) -> NSImage? {
+        guard let bundle = Bundle(path: path),
+              var name = bundle.object(forInfoDictionaryKey: "CFBundleIconFile") as? String else { return nil }
+        if (name as NSString).pathExtension.isEmpty { name += ".icns" }
+        let url = bundle.resourceURL?.appendingPathComponent(name)
+        return url.flatMap { NSImage(contentsOf: $0) }
     }
 
     var body: some View {

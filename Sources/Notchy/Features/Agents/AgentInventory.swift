@@ -7,6 +7,7 @@ final class AgentInventory: ObservableObject {
 
     private var scanTimer: Timer?
     private var usageTimer: Timer?
+    private var lastDevinFetch = Date.distantPast
 
     init() {
         refresh()
@@ -33,11 +34,14 @@ final class AgentInventory: ObservableObject {
 
     private func loadUsage() {
         guard Pref.bool(Pref.claude) else { return }
+        let fetchDevin = Date().timeIntervalSince(lastDevinFetch) > 300 && installed.contains { $0.id == "devin" }
+        if fetchDevin { lastDevinFetch = Date() }
         Task.detached { [weak self] in
             var result: [String: AgentUsage] = [:]
             if let codex = CodexUsageReader.read() { result["codex"] = codex }
             if let claude = ClaudeUsageReader.read() { result["claude"] = claude }
-            await self?.apply(usage: result)
+            let devin = fetchDevin ? await DevinUsageReader.read() : nil
+            await self?.apply(usage: result, devin: devin, refreshedDevin: fetchDevin)
         }
     }
 
@@ -45,7 +49,13 @@ final class AgentInventory: ObservableObject {
         if found != installed { installed = found }
     }
 
-    private func apply(usage result: [String: AgentUsage]) {
-        if result != usage { usage = result }
+    private func apply(usage result: [String: AgentUsage], devin: AgentUsage?, refreshedDevin: Bool) {
+        var merged = result
+        if refreshedDevin {
+            if let devin { merged["devin"] = devin }
+        } else if let cached = usage["devin"] {
+            merged["devin"] = cached
+        }
+        if merged != usage { usage = merged }
     }
 }

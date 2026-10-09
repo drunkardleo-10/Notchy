@@ -13,7 +13,7 @@ enum AgentCatalog {
         AgentKind(id: "codex", name: "Codex", binaries: ["codex"], apps: ["Codex"]),
         AgentKind(id: "claude", name: "Claude", binaries: ["claude"], apps: ["Claude"]),
         AgentKind(id: "cursor", name: "Cursor", binaries: ["cursor-agent", "cursor"], apps: ["Cursor"]),
-        AgentKind(id: "antigravity", name: "Antigravity", binaries: ["antigravity"], apps: ["Antigravity", "Antigravity IDE"]),
+        AgentKind(id: "antigravity", name: "Antigravity", binaries: ["agy", "antigravity"], apps: ["Antigravity", "Antigravity IDE"]),
         AgentKind(id: "gemini", name: "Gemini", binaries: ["gemini"], apps: []),
         AgentKind(id: "grok", name: "Grok", binaries: ["grok"], apps: ["Grok"]),
         AgentKind(id: "droid", name: "Droid", binaries: ["droid"], apps: []),
