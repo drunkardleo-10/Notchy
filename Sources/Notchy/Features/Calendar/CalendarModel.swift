@@ -17,8 +17,10 @@ final class CalendarModel: ObservableObject {
 
     @Published private(set) var events: [CalendarEvent] = []
     @Published private(set) var dayEvents: [CalendarEvent] = []
+    @Published private(set) var nextDayEvents: [CalendarEvent] = []
     @Published private(set) var selectedDate = Calendar.current.startOfDay(for: Date())
     @Published private(set) var access: Access = .unknown
+    @Published private(set) var resetToken = 0
 
     var onMeetingSoon: ((CalendarEvent, Int) -> Void)?
 
@@ -61,7 +63,7 @@ final class CalendarModel: ObservableObject {
 
     func refresh() {
         updateAccess()
-        guard access == .granted, Pref.bool(Pref.calendar) else { events = []; dayEvents = []; return }
+        guard access == .granted, Pref.bool(Pref.calendar) else { events = []; dayEvents = []; nextDayEvents = []; return }
         let now = Date()
         loadDayEvents()
         let predicate = store.predicateForEvents(withStart: Calendar.current.startOfDay(for: now),
@@ -73,17 +75,29 @@ final class CalendarModel: ObservableObject {
             .map(Self.makeEvent)
     }
 
+    func resetToToday() {
+        selectedDate = Calendar.current.startOfDay(for: Date())
+        loadDayEvents()
+        resetToken += 1
+    }
+
     func select(_ date: Date) {
         selectedDate = Calendar.current.startOfDay(for: date)
         loadDayEvents()
     }
 
     private func loadDayEvents() {
-        guard access == .granted else { dayEvents = []; return }
+        guard access == .granted else { dayEvents = []; nextDayEvents = []; return }
         let start = selectedDate
-        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        let next = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        let after = Calendar.current.date(byAdding: .day, value: 1, to: next) ?? next.addingTimeInterval(86400)
+        dayEvents = events(from: start, to: next)
+        nextDayEvents = events(from: next, to: after)
+    }
+
+    private func events(from start: Date, to end: Date) -> [CalendarEvent] {
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        dayEvents = store.events(matching: predicate)
+        return store.events(matching: predicate)
             .filter { $0.status != .canceled }
             .sorted { $0.startDate < $1.startDate }
             .prefix(20)

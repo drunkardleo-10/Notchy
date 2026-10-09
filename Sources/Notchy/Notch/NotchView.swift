@@ -288,7 +288,10 @@ struct NotchView: View {
             state.announceTrack()
         }
         .onChange(of: state.expanded) { _, expanded in
-            if expanded { state.cancelTrackAnnouncement() }
+            if expanded {
+                state.cancelTrackAnnouncement()
+                calendar.resetToToday()
+            }
         }
         .onChange(of: media.isPlaying) { _, _ in updatePausedActivityTimer() }
         .onChange(of: media.hasTrack) { _, _ in updatePausedActivityTimer() }

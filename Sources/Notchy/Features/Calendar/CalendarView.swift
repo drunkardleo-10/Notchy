@@ -12,14 +12,12 @@ struct CalendarView: View {
             placeholder(icon: "calendar.badge.exclamationmark", title: "Calendar access is turned off",
                         button: "Open Privacy Settings", action: calendar.openPrivacySettings)
         case .granted:
-            HStack(spacing: 12) {
-                CalendarWeekStrip(selected: calendar.selectedDate, onSelect: calendar.select)
-                    .frame(width: 204)
-                Rectangle().fill(.white.opacity(0.1)).frame(width: 1).padding(.vertical, 4)
-                CalendarEventList(events: calendar.dayEvents, date: calendar.selectedDate)
+            HStack(alignment: .top, spacing: 14) {
+                CalendarMonthGrid(selected: calendar.selectedDate, resetToken: calendar.resetToken, onSelect: calendar.select)
+                    .frame(width: 198)
+                CalendarEventList(events: calendar.dayEvents, nextEvents: calendar.nextDayEvents, date: calendar.selectedDate)
             }
             .padding(.horizontal, 4)
-            .padding(.top, 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear { calendar.refresh() }
         }

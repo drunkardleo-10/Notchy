@@ -62,10 +62,13 @@ struct EmptyMediaView: View {
                 }
                 HStack {
                     Spacer()
-                    Image(systemName: "laptopcomputer")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .frame(width: 36, height: 36)
+                    Button {
+                        NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                    .buttonStyle(MediaControlButtonStyle())
                 }
             }
         }
