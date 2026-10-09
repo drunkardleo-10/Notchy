@@ -3,6 +3,10 @@ import AppKit
 
 enum PomodoroLayout {
     static let sideWidth: CGFloat = 46
+
+    static func sideWidth(for text: String) -> CGFloat {
+        text.count > 5 ? 60 : sideWidth
+    }
 }
 
 struct TimerView: View {
@@ -213,8 +217,8 @@ struct PomodoroPillView: View {
     var body: some View {
         NotchAccessory(
             notch: notch,
-            leadingWidth: PomodoroLayout.sideWidth,
-            trailingWidth: PomodoroLayout.sideWidth
+            leadingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted),
+            trailingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted)
         ) {
             ZStack {
                 Circle()
@@ -234,6 +238,8 @@ struct PomodoroPillView: View {
         } trailing: {
             Text(pomodoro.formatted)
                 .font(.system(size: 11.5, weight: .semibold, design: .rounded).monospacedDigit())
+                .lineLimit(1)
+                .fixedSize()
                 .foregroundStyle(tint)
                 .contentTransition(.numericText(countsDown: true))
                 .animation(.easeOut(duration: 0.22), value: pomodoro.remaining)

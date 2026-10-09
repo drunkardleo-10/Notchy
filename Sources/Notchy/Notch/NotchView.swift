@@ -98,8 +98,8 @@ struct NotchView: View {
         if pomodoro.started {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
-                leadingWidth: PomodoroLayout.sideWidth,
-                trailingWidth: PomodoroLayout.sideWidth
+                leadingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted),
+                trailingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted)
             )
         }
         guard showMediaActivity else { return nil }
@@ -281,6 +281,7 @@ struct NotchView: View {
         .animation(expansionAnimation, value: state.hud?.id)
         .animation(expansionAnimation, value: volumeHUDStyleRawValue)
         .animation(expansionAnimation, value: liveSize != nil)
+        .animation(expansionAnimation, value: liveSize?.width)
         .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
         .onChange(of: media.title) { _, title in
             guard !title.isEmpty, showMediaActivity, state.hud == nil, !pomodoro.started else { return }
