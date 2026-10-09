@@ -4,6 +4,14 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.1 — 2026-10-09
+
+- Automatic updates via Sparkle and GitHub Releases, with a version row and "Check for Updates" in Settings
+- Agents tab: installed AI agents detected automatically with usage rings and limits for Codex, Claude, Devin and OpenCode
+- Album art dims and shrinks when paused, click it to open the playing app, and a song-title peek on hover and track change
+- Redesigned idle "Not Playing" media screen
+- Timer pill widens for times over 99 minutes
+
 ## 1.0.0 — 2026-10-09
 
 First official major release.
