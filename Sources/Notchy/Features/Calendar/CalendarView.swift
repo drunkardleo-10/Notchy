@@ -18,7 +18,7 @@ struct CalendarView: View {
                 Rectangle().fill(.white.opacity(0.1)).frame(width: 1).padding(.vertical, 4)
                 CalendarEventList(events: calendar.dayEvents, date: calendar.selectedDate)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 4)
             .padding(.top, 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onAppear { calendar.refresh() }

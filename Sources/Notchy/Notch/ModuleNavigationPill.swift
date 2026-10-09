@@ -1,14 +1,11 @@
 import SwiftUI
 
 enum ModuleNavigationMetrics {
-    static let width: CGFloat = 24
-    static let minimumHeight: CGFloat = 48
-    static let maximumHeight: CGFloat = 58
-    static let heightBase: CGFloat = 80
-    static let heightPerTab: CGFloat = 9
-    static let gap: CGFloat = 2
+    static let width: CGFloat = 28
+    static let height: CGFloat = 64
+    static let gap: CGFloat = 10
     static let openingTravel: CGFloat = 44
-    static let trailingHitExtension = gap + width
+    static let trailingHitExtension: CGFloat = 8
     static let panelWidthAllowance = trailingHitExtension * 2 + 12
 }
 
@@ -16,6 +13,7 @@ struct ModuleNavigationPill: View {
     let tabs: [NotchTab]
     let selection: NotchTab
     let onSelect: (NotchTab) -> Void
+    @Namespace private var namespace
 
     private var firstTab: NotchTab? {
         tabs.first
@@ -34,29 +32,31 @@ struct ModuleNavigationPill: View {
         return tabs[nextIndex]
     }
 
-    private var pillHeight: CGFloat {
-        min(
-            ModuleNavigationMetrics.maximumHeight,
-            max(
-                ModuleNavigationMetrics.minimumHeight,
-                ModuleNavigationMetrics.heightBase + CGFloat(tabs.count) * ModuleNavigationMetrics.heightPerTab
-            )
-        )
-    }
+    private let inset: CGFloat = 3
 
     private var slotHeight: CGFloat {
-        max(0, (pillHeight - 24) / 2)
+        (ModuleNavigationMetrics.height - inset * 2) / 2
     }
 
-    private func marker(isActive: Bool) -> some View {
-        Capsule()
-            .fill(isActive ? Color.white : Color.white.opacity(0.42))
-            .frame(
-                width: isActive ? 6 : 7,
-                height: isActive ? min(26, slotHeight * 0.7) : 7
-            )
-            .frame(width: 28, height: slotHeight)
-            .contentShape(Rectangle())
+    private var secondIcon: String {
+        isOnFirstTab ? (nextNonFirstTab?.icon ?? "ellipsis") : selection.icon
+    }
+
+    private func slot(icon: String, isActive: Bool) -> some View {
+        ZStack {
+            if isActive {
+                Capsule()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: ModuleNavigationMetrics.width - inset * 2, height: slotHeight)
+                    .matchedGeometryEffect(id: "activeSlot", in: namespace)
+            }
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .frame(width: ModuleNavigationMetrics.width, height: slotHeight)
+        .contentShape(Rectangle())
     }
 
     var body: some View {
@@ -65,7 +65,7 @@ struct ModuleNavigationPill: View {
                 Button {
                     onSelect(firstTab)
                 } label: {
-                    marker(isActive: isOnFirstTab)
+                    slot(icon: firstTab.icon, isActive: isOnFirstTab)
                 }
                 .buttonStyle(ModuleNavigationButtonStyle())
                 .help(firstTab.title)
@@ -77,16 +77,16 @@ struct ModuleNavigationPill: View {
                 Button {
                     onSelect(nextNonFirstTab)
                 } label: {
-                    marker(isActive: !isOnFirstTab)
+                    slot(icon: secondIcon, isActive: !isOnFirstTab)
                 }
                 .buttonStyle(ModuleNavigationButtonStyle())
-                .help("Next module: \(nextNonFirstTab.title)")
+                .help(isOnFirstTab ? "Next module: \(nextNonFirstTab.title)" : "\(selection.title) · next: \(nextNonFirstTab.title)")
                 .accessibilityLabel("Next module: \(nextNonFirstTab.title)")
                 .accessibilityAddTraits(!isOnFirstTab ? .isSelected : [])
             }
         }
-        .padding(.vertical, 12)
-        .frame(width: ModuleNavigationMetrics.width, height: pillHeight)
+        .padding(.vertical, inset)
+        .frame(width: ModuleNavigationMetrics.width, height: ModuleNavigationMetrics.height)
         .background {
             let capsule = Capsule()
             Group {

@@ -4,6 +4,7 @@ import SwiftUI
 struct ClipboardView: View {
     @ObservedObject var clipboard: ClipboardManager
     @State private var status: String?
+    @State private var dissolving: [UUID: Double] = [:]
 
     private var sorted: [ClipItem] {
         clipboard.items.sorted { $0.favorite && !$1.favorite }
@@ -14,10 +15,8 @@ struct ClipboardView: View {
             if clipboard.items.isEmpty {
                 emptyState
             } else {
-                HStack(spacing: 0) {
-                    tray
-                    actions
-                }
+                tray
+                    .overlay(alignment: .trailing) { actions }
             }
         }
         .padding(.top, 6)
@@ -44,13 +43,34 @@ struct ClipboardView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(spacing: 14) {
                 ForEach(sorted) { item in
-                    ClipboardCardView(item: item, clipboard: clipboard, onFlash: flash)
+                    ClipboardCardView(
+                        item: item,
+                        clipboard: clipboard,
+                        dissolveDelay: dissolving[item.id],
+                        onFlash: flash,
+                        onDelete: { dissolve([$0], stagger: 0) }
+                    )
+                    .transition(.asymmetric(insertion: .scale(scale: 0.85).combined(with: .opacity), removal: .opacity))
                 }
             }
-            .padding(.horizontal, 24)
+            .padding(.leading, 12)
+            .padding(.trailing, 96)
             .padding(.vertical, 10)
+            .animation(.spring(response: 0.4, dampingFraction: 0.86), value: sorted.map(\.id))
         }
+        .scrollClipDisabled()
         .frame(maxHeight: .infinity)
+        .mask(edgeFade)
+    }
+
+    private var edgeFade: some View {
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 12)
+            Rectangle().fill(.black)
+            LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 90)
+        }
     }
 
     private var actions: some View {
@@ -59,21 +79,38 @@ struct ClipboardView: View {
                 Text(status)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.green)
-                    .transition(.opacity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
             Button {
-                clipboard.clearUnfavorited()
+                let doomed = sorted.filter { !$0.favorite }
+                dissolve(doomed, stagger: min(0.06, 0.5 / Double(max(doomed.count, 1))))
+                flash("Cleared")
             } label: {
                 Text("Clear")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressScaleStyle())
         }
-        .padding(.trailing, 24)
+        .padding(.trailing, 20)
+    }
+
+    private func dissolve(_ items: [ClipItem], stagger: Double) {
+        let fresh = items.filter { dissolving[$0.id] == nil }
+        guard !fresh.isEmpty else { return }
+        for (index, item) in fresh.enumerated() { dissolving[item.id] = Double(index) * stagger }
+        let total = Double(fresh.count - 1) * stagger + Dissolve.duration
+        DispatchQueue.main.asyncAfter(deadline: .now() + total) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+                fresh.forEach { clipboard.delete($0) }
+                fresh.forEach { dissolving[$0.id] = nil }
+            }
+        }
     }
 
     private func flash(_ message: String) {
@@ -87,33 +124,17 @@ struct ClipboardView: View {
 struct ClipboardCardView: View {
     let item: ClipItem
     @ObservedObject var clipboard: ClipboardManager
+    let dissolveDelay: Double?
     let onFlash: (String) -> Void
+    let onDelete: (ClipItem) -> Void
     @State private var hovering = false
 
     private let cardWidth: CGFloat = 120
     private let previewHeight: CGFloat = 68
 
     var body: some View {
-        VStack(spacing: 6) {
-            preview
-                .frame(width: cardWidth, height: previewHeight)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.45)))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .strokeBorder(Color.white.opacity(hovering ? 0.35 : 0.12), lineWidth: 1)
-                )
-                .overlay(alignment: .topLeading) { favoriteBadge }
-                .overlay(alignment: .topTrailing) { deleteButton }
-                .overlay(alignment: .bottomTrailing) { ocrButton }
-
-            Text(caption)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.75))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(width: cardWidth)
-        }
+        visual(hovering: hovering)
+            .dissolving(after: dissolveDelay) { visual(hovering: false) }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture {
@@ -128,7 +149,30 @@ struct ClipboardCardView: View {
             }
             Button(item.favorite ? "Unfavorite" : "Favorite") { clipboard.toggleFavorite(item) }
             Divider()
-            Button("Delete") { clipboard.delete(item) }
+            Button("Delete") { onDelete(item) }
+        }
+    }
+
+    private func visual(hovering: Bool) -> some View {
+        VStack(spacing: 6) {
+            preview
+                .frame(width: cardWidth, height: previewHeight)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.45)))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.white.opacity(hovering ? 0.35 : 0.12), lineWidth: 1)
+                )
+                .overlay(alignment: .topLeading) { favoriteBadge(hovering) }
+                .overlay(alignment: .topTrailing) { deleteButton(hovering) }
+                .overlay(alignment: .bottomTrailing) { ocrButton(hovering) }
+
+            Text(caption)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: cardWidth)
         }
     }
 
@@ -160,7 +204,7 @@ struct ClipboardCardView: View {
     }
 
     @ViewBuilder
-    private var favoriteBadge: some View {
+    private func favoriteBadge(_ hovering: Bool) -> some View {
         if item.favorite || hovering {
             Button {
                 clipboard.toggleFavorite(item)
@@ -178,10 +222,10 @@ struct ClipboardCardView: View {
     }
 
     @ViewBuilder
-    private var deleteButton: some View {
+    private func deleteButton(_ hovering: Bool) -> some View {
         if hovering {
             Button {
-                clipboard.delete(item)
+                onDelete(item)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
@@ -197,7 +241,7 @@ struct ClipboardCardView: View {
     }
 
     @ViewBuilder
-    private var ocrButton: some View {
+    private func ocrButton(_ hovering: Bool) -> some View {
         if item.imageFile != nil && hovering {
             Button {
                 clipboard.ocr(item) { onFlash($0 ? "Text copied" : "No text found") }
