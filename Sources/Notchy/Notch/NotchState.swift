@@ -12,7 +12,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .clipboard: "Clipboard"
         case .calendar: "Calendar"
         case .timer: "Timer"
-        case .claude: "Claude"
+        case .claude: "Agents"
         case .system: "System"
         case .mirror: "Mirror"
         case .tools: "Tools"

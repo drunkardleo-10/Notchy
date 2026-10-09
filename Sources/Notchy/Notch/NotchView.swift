@@ -343,7 +343,7 @@ struct NotchView: View {
                 case .clipboard: ClipboardView(clipboard: clipboard)
                 case .calendar: CalendarView(calendar: calendar)
                 case .timer: TimerView(pomodoro: pomodoro)
-                case .claude: ClaudeView(agents: agents)
+                case .claude: AgentsView(agents: agents)
                 case .system: SystemView(system: system)
                 case .mirror: MirrorView()
                 case .tools: ToolsView(highAlert: highAlert)

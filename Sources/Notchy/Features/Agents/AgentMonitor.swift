@@ -13,6 +13,7 @@ struct AgentSession: Identifiable, Equatable {
 final class AgentMonitor: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
     var onTransition: ((AgentSession) -> Void)?
+    let inventory = AgentInventory()
 
     static let baseDir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".notchy", isDirectory: true)
     static let agentsDir = baseDir.appendingPathComponent("agents", isDirectory: true)
@@ -77,6 +78,7 @@ final class AgentMonitor: ObservableObject {
         let fm = FileManager.default
         try? fm.createDirectory(at: Self.agentsDir, withIntermediateDirectories: true)
         try? Self.script.write(to: Self.scriptURL, atomically: true, encoding: .utf8)
+        ClaudeStatusline.install()
         try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: Self.scriptURL.path)
     }
 

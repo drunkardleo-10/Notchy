@@ -100,7 +100,7 @@ struct ModulesSettingsTab: View {
                     CardDivider()
                     ModuleRow(icon: "calendar", color: .green, title: "Calendar & Meetings", subtitle: "Upcoming events, one-click join", isOn: $calendar)
                     CardDivider()
-                    ModuleRow(icon: "sparkles", color: .purple, title: "Claude Code Monitor", subtitle: "Live session status and alerts", isOn: $claude)
+                    ModuleRow(icon: "sparkles", color: .purple, title: "AI Agents", subtitle: "Installed agents, usage limits and live status", isOn: $claude)
                     CardDivider()
                     CardDivider()
                     ModuleRow(icon: "cpu", color: .teal, title: "System Monitor", subtitle: "CPU, memory and stats", isOn: $system)
