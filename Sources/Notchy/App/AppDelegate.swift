@@ -106,10 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         agents.requests.onChange = { [weak self] in self?.syncAgentPrompt() }
         agents.onTransition = { [weak self] session in
-            guard let self, self.media.isPlaying || !Pref.bool(Pref.liveActivity) else { return }
-            let done = session.state == .done
-            self.hudMonitor?.showMessage(icon: done ? "checkmark.circle.fill" : "exclamationmark.bubble.fill",
-                                          title: done ? "Claude finished" : "Claude needs you",
+            guard let self, session.state == .attention, self.media.isPlaying || !Pref.bool(Pref.liveActivity) else { return }
+            self.hudMonitor?.showMessage(icon: "exclamationmark.bubble.fill", title: "Claude needs you",
                                           subtitle: session.project, duration: 5)
         }
         highAlert.onChange = { [weak self] on in
@@ -647,7 +645,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var agentActivityShowing: Bool {
-        Pref.bool(Pref.claude) && Pref.bool(Pref.liveActivity) && agents.activity != nil && !media.isPlaying && !pomodoro.started
+        guard Pref.bool(Pref.claude), Pref.bool(Pref.liveActivity), !pomodoro.started, let activity = agents.activity else { return false }
+        return !media.isPlaying || activity.state == .done
     }
 
     private func syncAgentPrompt() {

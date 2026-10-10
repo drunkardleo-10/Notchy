@@ -1,7 +1,7 @@
 import Foundation
 
 struct AgentActivity: Equatable {
-    static let doneLinger: TimeInterval = 6
+    static let doneLinger: TimeInterval = 3
     static let staleWorking: TimeInterval = 30 * 60
 
     let sessionID: String

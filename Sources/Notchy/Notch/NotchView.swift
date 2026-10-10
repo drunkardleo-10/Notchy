@@ -102,16 +102,16 @@ struct NotchView: View {
                 trailingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted)
             )
         }
-        if showMediaActivity {
-            return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
+        if agentActivity != nil {
+            return AgentActivityLayout.size(notch: state.notchSize)
         }
-        guard agentActivity != nil else { return nil }
-        return AgentActivityLayout.size(notch: state.notchSize)
+        guard showMediaActivity else { return nil }
+        return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
     }
 
     private var agentActivity: AgentActivity? {
-        guard liveOn, Pref.bool(Pref.claude), !pomodoro.started, !showMediaActivity else { return nil }
-        return agents.activity
+        guard liveOn, Pref.bool(Pref.claude), !pomodoro.started, let activity = agents.activity else { return nil }
+        return showMediaActivity && activity.state != .done ? nil : activity
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
     private var collapsedHorizontalOffset: CGFloat {
