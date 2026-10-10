@@ -109,7 +109,7 @@ struct NotchView: View {
             )
         }
         if agentActivity != nil {
-            return AgentActivityLayout.size(notch: state.notchSize)
+            return AgentActivityLayout.size(notch: state.notchSize, showsHeadline: agents.headlineVisible)
         }
         guard showMediaActivity else { return nil }
         return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
@@ -247,7 +247,7 @@ struct NotchView: View {
                     Group {
                         if showsTimerInNotch { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
                         else if let activity = agentActivity {
-                            AgentActivityView(activity: activity, notch: state.notchSize)
+                            AgentActivityView(activity: activity, notch: state.notchSize, showsHeadline: agents.headlineVisible)
                                 .transition(.opacity)
                         } else {
                             LiveActivityView(

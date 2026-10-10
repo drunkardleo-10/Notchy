@@ -18,6 +18,10 @@ final class AgentMonitor: ObservableObject {
 
     let requests = AgentRequestCenter()
     @Published private(set) var activity: AgentActivity?
+    @Published private(set) var headlineVisible = false
+
+    private var headlineKey: String?
+    private var hideHeadline: DispatchWorkItem?
 
     private var timer: Timer?
     private var lastStates: [String: AgentSession.State] = [:]
@@ -52,6 +56,7 @@ final class AgentMonitor: ObservableObject {
         if found != sessions { sessions = found }
         let nextActivity = AgentActivity(sessions: found)
         if nextActivity != activity { activity = nextActivity }
+        revealHeadline(for: nextActivity)
 
         for s in found where lastStates[s.id] != s.state {
             if !firstScan, s.state != .working { onTransition?(s) }
@@ -59,5 +64,22 @@ final class AgentMonitor: ObservableObject {
         }
         lastStates = lastStates.filter { key, _ in found.contains { $0.id == key } }
         firstScan = false
+    }
+
+    private func revealHeadline(for activity: AgentActivity?) {
+        let key = activity.map { "\($0.sessionID)|\($0.state.rawValue)|\($0.project)" }
+        guard key != headlineKey else { return }
+        headlineKey = key
+        hideHeadline?.cancel()
+        hideHeadline = nil
+        guard let activity else {
+            headlineVisible = false
+            return
+        }
+        headlineVisible = true
+        guard activity.state != .attention else { return }
+        let work = DispatchWorkItem { [weak self] in self?.headlineVisible = false }
+        hideHeadline = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + AgentActivity.headlineDuration, execute: work)
     }
 }

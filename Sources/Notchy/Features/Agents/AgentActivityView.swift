@@ -4,15 +4,16 @@ enum AgentActivityLayout {
     static let sideWidth: CGFloat = 64
     static let rowHeight: CGFloat = 26
 
-    static func size(notch: CGSize) -> CGSize {
+    static func size(notch: CGSize, showsHeadline: Bool) -> CGSize {
         let base = NotchAccessoryLayout.size(notch: notch, leadingWidth: sideWidth, trailingWidth: sideWidth)
-        return CGSize(width: base.width, height: base.height + rowHeight)
+        return CGSize(width: base.width, height: base.height + (showsHeadline ? rowHeight : 0))
     }
 }
 
 struct AgentActivityView: View {
     let activity: AgentActivity
     let notch: CGSize
+    let showsHeadline: Bool
 
     private var headlineColor: Color {
         switch activity.state {
@@ -51,20 +52,24 @@ struct AgentActivityView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Text(activity.headline)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(headlineColor)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .contentTransition(.opacity)
+            if showsHeadline {
+                HStack(spacing: 6) {
+                    Text(activity.headline)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(headlineColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .contentTransition(.opacity)
+                }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .frame(height: AgentActivityLayout.rowHeight - 4)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
-            .padding(.horizontal, 16)
-            .frame(maxWidth: .infinity)
-            .frame(height: AgentActivityLayout.rowHeight - 4)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: activity)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: showsHeadline)
     }
 }
 

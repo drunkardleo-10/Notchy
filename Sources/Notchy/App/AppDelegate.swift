@@ -615,7 +615,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
         let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8)
             + (state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0)
-            + (agentActivityShowing ? AgentActivityLayout.rowHeight : 0)
+            + (agentActivityShowing && agents.headlineVisible ? AgentActivityLayout.rowHeight : 0)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
         let isHovering = hot && allowedDisplay
@@ -780,7 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if state.hoveringNotch { return true }
             let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
             let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 12 : 20
-            let slackY: CGFloat = 14 + (agentActivityShowing ? AgentActivityLayout.rowHeight : 0)
+            let slackY: CGFloat = 14 + (agentActivityShowing && agents.headlineVisible ? AgentActivityLayout.rowHeight : 0)
             return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         }
     }
