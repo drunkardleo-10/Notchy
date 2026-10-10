@@ -104,6 +104,8 @@ enum ClaudeHooks {
     '
     """
 
+    static var eventNames: [String] { events.map(\.name) }
+
     private static var events: [(name: String, command: String, timeout: Int?)] {
         let status = statusScriptURL.path
         return [

@@ -33,7 +33,7 @@ final class LockWidgetsModel: ObservableObject {
     }
 
     func prepare() {
-        guard Pref.bool(Pref.lockWidgets) else { return }
+        guard Pref.bool(Pref.lockWidgets), !OnboardingModel.holdsPermissionPrompts else { return }
         if Pref.bool(Pref.widgetWeather) || Pref.bool(Pref.widgetAirQuality) || Pref.bool(Pref.widgetSun) {
             weather.prepare()
         }

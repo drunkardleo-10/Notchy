@@ -34,7 +34,8 @@ final class MediaKeyInterceptor {
     func start() {
         guard eventTap == nil else { return }
         guard AXIsProcessTrusted() else {
-            promptAccessibilityIfNeeded()
+            if !OnboardingModel.isNeeded { promptAccessibility() }
+            watchForAccessibility()
             return
         }
         checkTimer?.invalidate()
@@ -76,9 +77,12 @@ final class MediaKeyInterceptor {
         eventTap = nil
     }
 
-    private func promptAccessibilityIfNeeded() {
+    private func promptAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    private func watchForAccessibility() {
         if checkTimer == nil {
             checkTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
                 if AXIsProcessTrusted() {

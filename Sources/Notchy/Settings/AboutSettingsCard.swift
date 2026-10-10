@@ -30,6 +30,9 @@ struct AboutSettingsCard: View {
                         .foregroundStyle(.white.opacity(0.42))
                 }
                 Spacer()
+                QuickActionButton(title: "Replay Onboarding", prominent: false) {
+                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
+                }
                 QuickActionButton(title: "Check for Updates", prominent: false, action: onCheckForUpdates)
             }
             .padding(.vertical, 8)

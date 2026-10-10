@@ -57,6 +57,7 @@ struct NotchView: View {
     @ObservedObject var agents: AgentMonitor
     @ObservedObject var system: SystemMonitor
     @ObservedObject var highAlert: HighAlertModel
+    let onboarding: OnboardingModel
 
     @Namespace private var albumArtNamespace
     @Namespace private var visualizerNamespace
@@ -101,6 +102,9 @@ struct NotchView: View {
     }
 
     private var liveSize: CGSize? {
+        if state.onboardingIntro || state.onboardingOutro {
+            return OnboardingIntroLayout.size(notch: state.notchSize)
+        }
         if showsTimerInNotch {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
@@ -151,7 +155,10 @@ struct NotchView: View {
         24
     }
     private var expansionAnimation: Animation {
-        state.expanded
+        if state.onboardingOutro {
+            return .timingCurve(0.45, 0.0, 0.2, 1.0, duration: OnboardingIntroLayout.outroDuration)
+        }
+        return state.expanded
             ? NotchAnimation.notchOpen()
             : NotchAnimation.notchClose()
     }
@@ -191,6 +198,10 @@ struct NotchView: View {
 
             DynamicGlassGradient(expansion: state.expanded ? 1 : 0)
                 .animation(expansionAnimation, value: state.expanded)
+
+            Color.black.opacity((state.onboardingActive && state.onboardingSolid) || state.onboardingIntro || state.onboardingOutro ? 1 : 0)
+                .animation(expansionAnimation, value: state.onboardingActive)
+                .animation(.easeInOut(duration: 0.4), value: state.onboardingSolid)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay {
@@ -245,7 +256,11 @@ struct NotchView: View {
 
                 if let size = liveSize {
                     Group {
-                        if showsTimerInNotch { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
+                        if state.onboardingOutro {
+                            OnboardingIntroView(intro: onboarding.intro, notch: state.notchSize, outro: true) { onboarding.finishOutro() }
+                        } else if state.onboardingIntro {
+                            OnboardingIntroView(intro: onboarding.intro, notch: state.notchSize) { onboarding.finishIntro() }
+                        } else if showsTimerInNotch { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
                         else if let activity = agentActivity {
                             AgentActivityView(activity: activity, notch: state.notchSize, showsHeadline: agents.headlineVisible)
                                 .transition(.opacity)
@@ -272,6 +287,11 @@ struct NotchView: View {
             .clipShape(shape)
             .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
             .overlay(alignment: .topLeading) {
+                if (state.onboardingIntro || state.onboardingOutro) && !state.expanded {
+                    OnboardingIntroBubble(intro: onboarding.intro, notch: state.notchSize)
+                }
+            }
+            .overlay(alignment: .topLeading) {
                 FocusDotView(
                     pomodoro: pomodoro,
                     active: showsFocusDot,
@@ -284,7 +304,7 @@ struct NotchView: View {
             .offset(x: collapsedHorizontalOffset)
             .scaleEffect(!state.expanded && state.hoveringNotch ? 1.05 : 1.0, anchor: .top)
             .overlay(alignment: .trailing) {
-                if tabs.count > 1 && !state.agentPromptActive {
+                if tabs.count > 1 && !state.agentPromptActive && !state.onboardingActive {
                     ModuleNavigationPill(tabs: tabs, selection: activeTab, onSelect: state.selectTab)
                         .blur(radius: state.expanded ? 0 : 10)
                         .opacity(state.expanded ? 1 : 0)
@@ -313,13 +333,15 @@ struct NotchView: View {
         .animation(expansionAnimation, value: liveSize?.width)
         .animation(expansionAnimation, value: liveSize?.height)
         .animation(expansionAnimation, value: state.agentPromptActive)
+        .animation(expansionAnimation, value: state.onboardingActive)
+        .animation(expansionAnimation, value: state.onboardingCompact)
         .animation(expansionAnimation, value: state.compactTimer)
         .onChange(of: wantsCompactTimer, initial: true) { _, compact in
             state.compactTimer = compact
         }
         .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
         .onChange(of: media.title) { _, title in
-            guard !title.isEmpty, showMediaActivity, state.hud == nil else { return }
+            guard !title.isEmpty, showMediaActivity, state.hud == nil, !state.onboardingIntro, !state.onboardingActive else { return }
             state.announceTrack()
         }
         .onChange(of: showsFocusDot) { _, showing in
@@ -377,35 +399,43 @@ struct NotchView: View {
     private var content: some View {
         VStack(spacing: 4) {
             Spacer().frame(height: max(state.notchSize.height + 4, 16))
-            AgentPromptGate(center: agents.requests) {
-                Group {
-                    switch activeTab {
-                    case .media: MediaView(
-                        media: media,
-                        state: state,
-                        albumArtNamespace: albumArtNamespace,
-                        visualizerNamespace: visualizerNamespace
-                    )
-                    case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
-                    case .clipboard: inset(ClipboardView(clipboard: clipboard))
-                    case .calendar: inset(CalendarView(calendar: calendar))
-                    case .timer: inset(TimerView(pomodoro: pomodoro))
-                    case .claude: inset(AgentsView(agents: agents))
-                    case .system: inset(SystemView(system: system))
-                    case .mirror: inset(MirrorView())
-                    case .tools: inset(ToolsView(highAlert: highAlert))
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .transition(.asymmetric(
-                    insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
-                    removal: .move(edge: state.tabNavigationDirection > 0 ? .top : .bottom).combined(with: .opacity)
-                ))
-                .animation(NotchAnimation.tabSelect, value: activeTab)
+            if state.onboardingActive {
+                OnboardingStage(model: onboarding)
+            } else {
+                moduleContent
             }
         }
         .padding(.bottom, isCompact ? 18 : 20)
         .foregroundStyle(.white)
+    }
+
+    private var moduleContent: some View {
+        AgentPromptGate(center: agents.requests) {
+            Group {
+                switch activeTab {
+                case .media: MediaView(
+                    media: media,
+                    state: state,
+                    albumArtNamespace: albumArtNamespace,
+                    visualizerNamespace: visualizerNamespace
+                )
+                case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
+                case .clipboard: inset(ClipboardView(clipboard: clipboard))
+                case .calendar: inset(CalendarView(calendar: calendar))
+                case .timer: inset(TimerView(pomodoro: pomodoro))
+                case .claude: inset(AgentsView(agents: agents))
+                case .system: inset(SystemView(system: system))
+                case .mirror: inset(MirrorView())
+                case .tools: inset(ToolsView(highAlert: highAlert))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.asymmetric(
+                insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
+                removal: .move(edge: state.tabNavigationDirection > 0 ? .top : .bottom).combined(with: .opacity)
+            ))
+            .animation(NotchAnimation.tabSelect, value: activeTab)
+        }
     }
 
     private func inset<Content: View>(_ view: Content) -> some View {

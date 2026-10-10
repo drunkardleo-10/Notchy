@@ -41,6 +41,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let agents = AgentMonitor()
     let system = SystemMonitor()
     private var lockWidgets: LockWidgetsController?
+    private var onboarding: OnboardingModel!
+    private let dimmer = OnboardingDimmer()
 
     private var hudMonitor: HUDMonitor?
     private var primaryPanel: NotchPanel!
@@ -84,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isScreenLocked = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Pref.migrateLegacyDefaults()
         Pref.registerDefaults()
+        onboarding = OnboardingModel(agents: agents, media: media, calendar: calendar)
         basket = BasketController(shelf: shelf)
         setUpPanel()
         setUpStatusItem()
@@ -92,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpMonitors()
         lockWidgets = LockWidgetsController(media: media)
         hudMonitor = HUDMonitor(states: { [weak self] in self?.allNotchStates ?? [] })
+        hudMonitor?.onEvent = { [weak self] kind in self?.onboarding.receive(kind) }
         hudMonitor?.onLockStateChanged = { [weak self] isLocked in
             self?.handleLockStateChanged(isLocked: isLocked)
         }
@@ -122,11 +127,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.configureDisplayMode() }
         }
         installCallbacks(on: primaryState, displayID: primaryDisplayID)
+        setUpOnboarding()
         let notifications: [(String, () -> Void)] = [
             ("com.notchy.playPause", { [weak self] in self?.media.playPause() }),
             ("com.notchy.toggle", { [weak self] in self?.toggleNotch() }),
             ("com.notchy.next", { [weak self] in self?.media.next() }),
             ("com.notchy.previous", { [weak self] in self?.media.previous() }),
+            ("com.notchy.replayOnboarding", { [weak self] in self?.onboarding.start() }),
         ]
         for (name, action) in notifications {
             var token: Int32 = 0
@@ -156,7 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let pad = NotchState.panelPadding
         let size = CGSize(
             width: NotchState.fullExpandedSize.width + pad * 2 + ModuleNavigationMetrics.panelWidthAllowance,
-            height: NotchState.fullExpandedSize.height + pad
+            height: max(NotchState.fullExpandedSize.height, NotchState.onboardingSize.height) + pad
         )
         let panel = NotchPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow], backing: .buffered, defer: false)
@@ -173,7 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let root = NotchView(state: state, shelf: shelf, clipboard: clipboard, media: media,
                              pomodoro: pomodoro, calendar: calendar, agents: agents, system: system,
-                             highAlert: highAlert)
+                             highAlert: highAlert, onboarding: onboarding)
         let host = NSHostingView(rootView: root)
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.clear.cgColor
@@ -322,7 +329,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
     }
 
+    private func setUpOnboarding() {
+        onboarding.onPresent = { [weak self] in self?.presentOnboarding() }
+        onboarding.onFinish = { [weak self] in self?.dismissOnboarding() }
+        onboarding.onOutro = { [weak self] in self?.playOnboardingOutro() }
+        onboarding.onStepChange = { [weak self] step in self?.primaryState.onboardingSolid = step != .appearance }
+        onboarding.onYield = { [weak self] in
+            guard let self else { return }
+            self.dimmer.hide()
+            withAnimation(NotchAnimation.notchOpen(for: self.primaryPanel.screen)) {
+                self.primaryState.onboardingCompact = true
+            }
+        }
+        NotificationCenter.default.addObserver(forName: .replayOnboarding, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.settingsWindow?.close()
+                self?.onboarding.start()
+            }
+        }
+        guard OnboardingModel.isNeeded else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.onboarding.start(resuming: true)
+        }
+    }
+
+    private func presentOnboarding() {
+        guard !isScreenLocked else { return }
+        cancelPendingExpansion()
+        collapseWork?.cancel()
+        collapseWork = nil
+        activeDisplayID = primaryDisplayID
+        primaryState.cancelTrackAnnouncement()
+        dimmer.show()
+        if onboarding.introPlaying {
+            primaryState.onboardingActive = false
+            setExpanded(false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
+            withAnimation(NotchAnimation.notchOpen(for: primaryPanel.screen)) {
+                primaryState.onboardingIntro = true
+            }
+            return
+        }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) {
+            primaryState.onboardingIntro = false
+            primaryState.onboardingActive = true
+        }
+        withAnimation(NotchAnimation.notchOpen(for: primaryPanel.screen)) {
+            primaryState.onboardingCompact = onboarding.waitingForSettings != nil
+        }
+        if primaryState.expanded {
+            primaryPanel.ignoresMouseEvents = false
+            primaryPanel.makeKey()
+        } else {
+            setExpanded(true, openingHaptic: false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
+        }
+    }
+
+    private func playOnboardingOutro() {
+        dimmer.hide()
+        cancelPendingExpansion()
+        primaryState.onboardingOutro = true
+        setExpanded(false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
+    }
+
+    private func dismissOnboarding() {
+        dimmer.hide()
+        withAnimation(NotchAnimation.notchClose(for: primaryPanel.screen)) {
+            primaryState.onboardingIntro = false
+            primaryState.onboardingOutro = false
+            primaryState.onboardingActive = false
+            primaryState.onboardingCompact = false
+        }
+        setExpanded(false, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
+    }
+
     @objc private func toggleNotch() {
+        guard !primaryState.onboardingActive, !primaryState.onboardingIntro else { return }
         activeDisplayID = primaryDisplayID
         setExpanded(!primaryState.expanded, state: primaryState, panel: primaryPanel, displayID: primaryDisplayID)
     }
@@ -354,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.isReleasedWhenClosed = false
             settingsWindow = w
         }
-        setExpanded(false)
+        if !primaryState.onboardingActive { setExpanded(false) }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.center()
         settingsWindow?.makeKeyAndOrderFront(nil)
@@ -444,6 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.isScreenLocked = isLocked
         lockWidgets?.setLocked(isLocked)
         if isLocked {
+            dimmer.hide()
             cancelPendingExpansion()
             cancelAllCollapseWork()
             setExpanded(false, interactive: false, openingHaptic: false)
@@ -465,7 +549,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for instance in additionalDisplays.values {
                 instance.panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
             }
-            evaluateHover()
+            if primaryState.onboardingActive || primaryState.onboardingIntro {
+                presentOnboarding()
+            } else {
+                evaluateHover()
+            }
         }
     }
 
@@ -531,7 +619,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func evaluateHover() {
-        guard !isScreenLocked else { return }
+        guard !isScreenLocked, !primaryState.onboardingIntro, !primaryState.onboardingOutro else { return }
         if glassPreviewWasExpanded != nil {
             collapseWork?.cancel()
             collapseWork = nil
@@ -580,7 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 instance.state.hoveringArtwork = false
             }
             for (id, instance) in displayInstances where instance.state.expanded {
-                if instance.state.agentPromptActive || pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
+                if instance.state.agentPromptActive || instance.state.onboardingActive || pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
                     cancelCollapseWork(for: id)
                 } else {
                     scheduleCollapse(for: instance)
@@ -590,7 +678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if state.expanded {
             let id = activeDisplayID ?? "primary"
-            if state.agentPromptActive || pointerIsInsideExpandedNotch(loc, state: state, panel: panel) {
+            if state.agentPromptActive || state.onboardingActive || pointerIsInsideExpandedNotch(loc, state: state, panel: panel) {
                 collapseWork?.cancel()
                 collapseWork = nil
                 cancelCollapseWork(for: id)

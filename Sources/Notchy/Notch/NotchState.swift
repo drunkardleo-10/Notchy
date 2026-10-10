@@ -60,6 +60,9 @@ final class NotchState: ObservableObject {
     static let lyricsExpandedSize = queueExpandedSize
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let agentPromptSize = CGSize(width: 520, height: 235)
+    static let onboardingSize = CGSize(width: 620, height: 290)
+    static let onboardingWaitWidth: CGFloat = 470
+    static let onboardingWaitExtraHeight: CGFloat = 64
     static let panelPadding: CGFloat = 24
     static let compactTimerExtraHeight: CGFloat = 76
 
@@ -91,9 +94,19 @@ final class NotchState: ObservableObject {
     var onLyricsClosed: (() -> Void)?
 
     @Published var agentPromptActive = false
+    @Published var onboardingActive = false
+    @Published var onboardingIntro = false
+    @Published var onboardingOutro = false
+    @Published var onboardingSolid = true
+    @Published var onboardingCompact = false
     @Published var compactTimer = false
 
     var expandedSize: CGSize {
+        if onboardingActive {
+            return onboardingCompact
+                ? CGSize(width: Self.onboardingWaitWidth, height: notchSize.height + Self.onboardingWaitExtraHeight)
+                : Self.onboardingSize
+        }
         if agentPromptActive {
             return Self.agentPromptSize
         }

@@ -38,6 +38,22 @@ enum Pref {
     static let widgetEvent = "lockWidgetEvent"
     static let widgetMedia = "lockWidgetMedia"
     static let lockWidgetsOffset = "lockWidgetsOffset"
+    static let onboardingVersion = "onboardingVersion"
+    static let onboardingResume = "onboardingResumeStep"
+
+    private static let legacyBundleID = "com.leo.notchy"
+    private static let legacyMigrated = "migratedLegacyDefaults"
+
+    static func migrateLegacyDefaults() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: legacyMigrated) else { return }
+        defaults.set(true, forKey: legacyMigrated)
+        guard Bundle.main.bundleIdentifier != legacyBundleID,
+              let legacy = defaults.persistentDomain(forName: legacyBundleID) else { return }
+        for (key, value) in legacy where defaults.object(forKey: key) == nil {
+            defaults.set(value, forKey: key)
+        }
+    }
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [

@@ -24,6 +24,7 @@ final class HUDMonitor: NSObject {
     private var lastMuted = false
 
     private var mediaKeyInterceptor: MediaKeyInterceptor?
+    var onEvent: ((HUDKind) -> Void)?
     private let feedbackSound = NSSound(contentsOfFile: "/System/Library/LoginPlugins/BezelServices.loginPlugin/Contents/Resources/volume.aiff", byReference: true)
 
     init(states: @escaping () -> [NotchState]) {
@@ -37,6 +38,7 @@ final class HUDMonitor: NSObject {
 
 
     private func show(_ kind: HUDKind, duration: TimeInterval?) {
+        onEvent?(kind)
         let visibleStates = states().filter { !$0.expanded }
         guard !visibleStates.isEmpty else { return }
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
