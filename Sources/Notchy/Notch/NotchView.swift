@@ -101,6 +101,11 @@ struct NotchView: View {
         pomodoro.started && showMediaActivity && !state.expanded && !hidesLiveActivityForHUD
     }
 
+    private var showsAgentDot: Bool {
+        liveOn && Pref.bool(Pref.claude) && agents.activity != nil && agentActivity == nil
+            && !state.expanded && !hidesLiveActivityForHUD
+    }
+
     private var liveSize: CGSize? {
         if state.onboardingIntro || state.onboardingOutro {
             return OnboardingIntroLayout.size(notch: state.notchSize)
@@ -301,6 +306,17 @@ struct NotchView: View {
                     notchHeight: state.notchSize.height
                 )
             }
+            .overlay(alignment: .topLeading) {
+                AgentDotView(
+                    pose: agents.activity?.pose,
+                    active: showsAgentDot,
+                    activity: agents.activity,
+                    detailOpen: state.agentDetailOpen,
+                    hovering: state.hoveringAgentDot,
+                    anchorWidth: collapsedSize.width,
+                    notchHeight: state.notchSize.height
+                )
+            }
             .offset(x: collapsedHorizontalOffset)
             .scaleEffect(!state.expanded && state.hoveringNotch ? 1.05 : 1.0, anchor: .top)
             .overlay(alignment: .trailing) {
@@ -349,6 +365,16 @@ struct NotchView: View {
             if !showing {
                 state.focusDetailOpen = false
                 state.hoveringFocusDot = false
+            }
+        }
+        .onChange(of: collapsedSize.width, initial: true) { _, width in
+            state.collapsedWidth = width
+        }
+        .onChange(of: showsAgentDot) { _, showing in
+            state.agentDotVisible = showing
+            if !showing {
+                state.agentDetailOpen = false
+                state.hoveringAgentDot = false
             }
         }
         .onChange(of: state.expanded) { _, expanded in

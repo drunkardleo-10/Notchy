@@ -65,10 +65,12 @@ struct FocusDotView: View {
             hover: hovering ? 1 : 0,
             anchorWidth: anchorWidth,
             notchHeight: notchHeight,
-            tint: tint,
-            symbol: pomodoro.phase == .focus ? "target" : "cup.and.saucer.fill",
-            ringProgress: pomodoro.progress,
-            running: pomodoro.running
+            content: FocusRing(
+                tint: tint,
+                symbol: pomodoro.phase == .focus ? "target" : "cup.and.saucer.fill",
+                ringProgress: pomodoro.progress,
+                running: pomodoro.running
+            )
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -98,15 +100,12 @@ struct FocusDotView: View {
     private static let detachDelay = 520
 }
 
-private struct FocusDotLayer: View, Animatable {
+struct FocusDotLayer<Content: View>: View, Animatable {
     var progress: CGFloat
     var hover: CGFloat
     let anchorWidth: CGFloat
     let notchHeight: CGFloat
-    let tint: Color
-    let symbol: String
-    let ringProgress: Double
-    let running: Bool
+    let content: Content
 
     var animatableData: AnimatablePair<CGFloat, CGFloat> {
         get { AnimatablePair(progress, hover) }
@@ -156,7 +155,7 @@ private struct FocusDotLayer: View, Animatable {
                     .offset(x: seamX)
             }
 
-            ring
+            content
                 .frame(width: diameter - 4, height: diameter - 4)
                 .scaleEffect(scale)
                 .opacity(contentOpacity)
@@ -166,8 +165,15 @@ private struct FocusDotLayer: View, Animatable {
         .offset(x: anchorWidth - L.bodyInset - seamX, y: -L.pad)
         .opacity(progress > 0.001 ? 1 : 0)
     }
+}
 
-    private var ring: some View {
+private struct FocusRing: View {
+    let tint: Color
+    let symbol: String
+    let ringProgress: Double
+    let running: Bool
+
+    var body: some View {
         ZStack {
             Circle()
                 .stroke(tint.opacity(0.22), lineWidth: 2)

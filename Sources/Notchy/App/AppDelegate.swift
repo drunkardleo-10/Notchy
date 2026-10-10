@@ -569,12 +569,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
                 }
                 withAnimation(NotchAnimation.spring(response: 0.42, dampingFraction: 0.78)) {
+                    state.agentDetailOpen = false
                     state.focusDetailOpen.toggle()
+                }
+                return
+            }
+            if state.agentDotVisible && isMouseInAgentDot(loc) {
+                if Pref.bool(Pref.hapticFeedback) {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                }
+                withAnimation(NotchAnimation.spring(response: 0.42, dampingFraction: 0.78)) {
+                    state.focusDetailOpen = false
+                    state.agentDetailOpen.toggle()
                 }
                 return
             }
             if state.focusDetailOpen {
                 state.focusDetailOpen = false
+            }
+            if state.agentDetailOpen {
+                state.agentDetailOpen = false
             }
             if !state.expanded && isPointerOverCollapsedNotch(loc) {
                 if state.hoveringNotch && isMouseInTrailingLiveActivity(loc) {
@@ -697,6 +711,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         updateHoveringFocusDot(isMouseInFocusDot(loc))
+        updateHoveringAgentDot(isMouseInAgentDot(loc))
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
@@ -706,7 +721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             + (agentActivityShowing && agents.headlineVisible ? AgentActivityLayout.rowHeight : 0)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
-        let isHovering = hot && allowedDisplay
+        let isHovering = hot && allowedDisplay && !(state.agentDotVisible && isMouseInAgentDot(loc))
         updateHoveringNotch(isHovering)
         updateHoveringArtwork(isHovering && isMouseInLeadingLiveActivity(loc))
         let canOpenOnHover = Pref.bool(Pref.hoverOpen) || draggingContent
@@ -886,6 +901,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shouldHover = hovering && state.focusDotVisible && !state.expanded
         guard state.hoveringFocusDot != shouldHover else { return }
         state.hoveringFocusDot = shouldHover
+    }
+
+    private func updateHoveringAgentDot(_ hovering: Bool) {
+        let shouldHover = hovering && state.agentDotVisible && !state.expanded
+        guard state.hoveringAgentDot != shouldHover else { return }
+        state.hoveringAgentDot = shouldHover
+    }
+
+    private func isMouseInAgentDot(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+        let diameter = FocusDotLayout.diameter(notchHeight: notch.height)
+        let notchLeft = f.midX - max(state.collapsedWidth, notch.width) / 2
+        let maxX = notchLeft - FocusDotLayout.gap / 2
+        let minX = notchLeft - FocusDotLayout.gap - diameter - 8
+        return loc.x >= minX && loc.x <= maxX && loc.y >= f.maxY - notch.height - 8 && loc.y <= f.maxY + 4
     }
 
     private func isMouseInFocusDot(_ loc: NSPoint) -> Bool {

@@ -75,6 +75,22 @@ enum MascotSprites {
         "c": Color(red: 0.45, green: 0.95, blue: 0.80)
     ]
 
+    static func bounds(for pose: MascotPose) -> CGRect {
+        var minX = Int.max, minY = Int.max, maxX = Int.min, maxY = Int.min
+        for layer in layers(for: pose, frame: 0) {
+            for (row, line) in layer.pixels.enumerated() {
+                for (column, key) in line.enumerated() where palette[key] != nil {
+                    minX = min(minX, layer.x + column)
+                    maxX = max(maxX, layer.x + column + 1)
+                    minY = min(minY, layer.y + row)
+                    maxY = max(maxY, layer.y + row + 1)
+                }
+            }
+        }
+        guard minX <= maxX else { return CGRect(x: 0, y: 0, width: columns, height: rows) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     static func layers(for pose: MascotPose, frame: Int) -> [Layer] {
         let bounce = pose == .celebrating && frame == 1 ? -1 : 0
         let walking = pose != .celebrating

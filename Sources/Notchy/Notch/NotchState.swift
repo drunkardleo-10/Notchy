@@ -127,6 +127,10 @@ final class NotchState: ObservableObject {
     @Published var hoveringArtwork = false
     @Published var focusDotVisible = false
     @Published var hoveringFocusDot = false
+    @Published var agentDotVisible = false
+    @Published var hoveringAgentDot = false
+    @Published var agentDetailOpen = false
+    @Published var collapsedWidth: CGFloat = 0
     @Published var focusDetailOpen = false
     @Published var announcingTrack = false
     private var announceWork: DispatchWorkItem?

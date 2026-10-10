@@ -31,7 +31,7 @@ struct FocusDetailCard: View, Animatable {
             .opacity(contentOpacity)
             .blur(radius: (1 - min(1, progress)) * 4)
             .frame(width: lerp(dotDiameter, FocusDetailLayout.width), height: lerp(dotDiameter, FocusDetailLayout.height))
-            .background { glass(cornerRadius: lerp(dotDiameter / 2, FocusDetailLayout.cornerRadius)) }
+            .background { DetailGlass(cornerRadius: lerp(dotDiameter / 2, FocusDetailLayout.cornerRadius)) }
             .clipped()
             .frame(width: FocusDetailLayout.width, height: FocusDetailLayout.height)
             .offset(y: -(1 - progress) * travel)
@@ -71,9 +71,12 @@ struct FocusDetailCard: View, Animatable {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
     }
+}
 
-    @ViewBuilder
-    private func glass(cornerRadius: CGFloat) -> some View {
+struct DetailGlass: View {
+    let cornerRadius: CGFloat
+
+    var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         if #available(macOS 26.0, *) {
             Color.clear.glassEffect(.regular, in: shape)
