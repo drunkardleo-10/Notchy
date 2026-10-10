@@ -4,6 +4,13 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.3 — 2026-10-10
+
+- Interactive Claude agent permission & question request prompt cards directly in the notch
+- Animated pixel mascot live activity pill reflecting Claude agent active/waiting/done states
+- Automatic Claude Code hooks integration via `~/.notchy`
+- Smoother module icon morph transitions and layout inset refinements
+
 ## 1.0.2 — 2026-10-09
 
 - Calendar redesigned with a month grid on the left and a day agenda with the next day on the right
