@@ -2,10 +2,10 @@ import SwiftUI
 import AppKit
 
 enum PomodoroLayout {
-    static let sideWidth: CGFloat = 46
+    static let sideWidth: CGFloat = 54
 
     static func sideWidth(for text: String) -> CGFloat {
-        text.count > 5 ? 60 : sideWidth
+        text.count > 5 ? 68 : sideWidth
     }
 }
 
@@ -196,6 +196,7 @@ struct PomodoroPillView: View {
                 .contentTransition(.numericText(countsDown: true))
                 .animation(.easeOut(duration: 0.22), value: pomodoro.remaining)
                 .opacity(pomodoro.running ? 1.0 : 0.6)
+                .padding(.trailing, 8)
         }
     }
 }
