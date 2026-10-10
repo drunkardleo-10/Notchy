@@ -29,6 +29,15 @@ struct SettingsView: View {
     @AppStorage(Pref.lockHUD) private var lockHUD = true
     @AppStorage(Pref.capsLockHUD) private var capsLockHUD = true
 
+    @AppStorage(Pref.lockWidgets) private var lockWidgets = false
+    @AppStorage(Pref.widgetBattery) private var widgetBattery = true
+    @AppStorage(Pref.widgetWeather) private var widgetWeather = true
+    @AppStorage(Pref.widgetAirQuality) private var widgetAirQuality = true
+    @AppStorage(Pref.widgetSun) private var widgetSun = true
+    @AppStorage(Pref.widgetEvent) private var widgetEvent = false
+    @AppStorage(Pref.widgetMedia) private var widgetMedia = true
+    @AppStorage(Pref.lockWidgetsOffset) private var lockWidgetsOffset = 0.0
+
     @AppStorage(Pref.hoverOpen) private var hoverOpen = true
     @AppStorage(Pref.notchDisplayMode) private var notchDisplayMode = NotchDisplayMode.main.rawValue
     @AppStorage(Pref.externalDisplayID) private var externalDisplayID = ""
@@ -72,6 +81,17 @@ struct SettingsView: View {
                             batteryHUD: $batteryHUD,
                             lockHUD: $lockHUD,
                             capsLockHUD: $capsLockHUD
+                        )
+                    case .widgets:
+                        WidgetsSettingsTab(
+                            lockWidgets: $lockWidgets,
+                            battery: $widgetBattery,
+                            weather: $widgetWeather,
+                            airQuality: $widgetAirQuality,
+                            sun: $widgetSun,
+                            event: $widgetEvent,
+                            media: $widgetMedia,
+                            offset: $lockWidgetsOffset
                         )
                     case .general:
                         GeneralSettingsTab(

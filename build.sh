@@ -44,6 +44,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   $SPARKLE_KEYS
   <key>NSCalendarsFullAccessUsageDescription</key><string>notchy shows your upcoming events and meeting links in the notch.</string>
   <key>NSCalendarsUsageDescription</key><string>notchy shows your upcoming events and meeting links in the notch.</string>
+  <key>NSLocationUsageDescription</key><string>notchy uses your approximate location for weather, air quality and sunrise widgets on the lock screen.</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>notchy uses your approximate location for weather, air quality and sunrise widgets on the lock screen.</string>
   <key>NSCameraUsageDescription</key><string>notchy can show a quick camera mirror in the notch.</string>
   <key>NSBluetoothAlwaysUsageDescription</key><string>notchy shows a HUD when AirPods and other Bluetooth audio devices connect.</string>
   <key>NSAudioCaptureUsageDescription</key><string>notchy analyzes audio from the current media app to draw a real-time visualizer. Audio is processed locally and never leaves your Mac.</string>

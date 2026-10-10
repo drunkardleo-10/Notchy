@@ -1,12 +1,13 @@
 import SwiftUI
 
 enum SettingsTab: Int, CaseIterable {
-    case modules, media, huds, general
+    case modules, media, huds, widgets, general
     var title: String {
         switch self {
         case .modules: return "Modules"
         case .media: return "Media"
         case .huds: return "HUDs"
+        case .widgets: return "Widgets"
         case .general: return "General"
         }
     }
@@ -15,6 +16,7 @@ enum SettingsTab: Int, CaseIterable {
         case .modules: return "square.grid.2x2.fill"
         case .media: return "music.note"
         case .huds: return "slider.horizontal.3"
+        case .widgets: return "widget.small"
         case .general: return "gearshape.fill"
         }
     }

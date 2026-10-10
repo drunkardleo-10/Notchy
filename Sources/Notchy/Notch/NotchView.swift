@@ -811,6 +811,8 @@ struct MediaView: View {
     @ObservedObject var state: NotchState
     var albumArtNamespace: Namespace.ID? = nil
     var visualizerNamespace: Namespace.ID? = nil
+    var showsFavorite = true
+    var showsSettings = true
     @State private var favorite = false
     @State private var hoveringLyricsButton = false
 
@@ -940,17 +942,19 @@ struct MediaView: View {
                     }
                     .buttonStyle(MediaControlButtonStyle(isActive: state.showQueue))
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 1, height: 14)
+                    if showsFavorite {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: 1, height: 14)
 
-                    Button { favorite.toggle() } label: {
-                        Image(systemName: favorite ? "star.fill" : "star")
-                            .contentTransition(.symbolEffect)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(favorite ? .yellow : .white)
+                        Button { favorite.toggle() } label: {
+                            Image(systemName: favorite ? "star.fill" : "star")
+                                .contentTransition(.symbolEffect)
+                                .font(.system(size: 17, weight: .medium))
+                                .foregroundStyle(favorite ? .yellow : .white)
+                        }
+                        .buttonStyle(MediaControlButtonStyle())
                     }
-                    .buttonStyle(MediaControlButtonStyle())
                 }
 
                 Spacer()
@@ -965,17 +969,19 @@ struct MediaView: View {
                     .buttonStyle(MediaControlButtonStyle())
                     .disabled(!media.canShuffle)
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.18))
-                        .frame(width: 1, height: 14)
+                    if showsSettings {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: 1, height: 14)
 
-                    Button {
-                        NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 16, weight: .medium))
+                        Button {
+                            NSApp.sendAction(#selector(AppDelegate.openSettings), to: nil, from: nil)
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 16, weight: .medium))
+                        }
+                        .buttonStyle(MediaControlButtonStyle())
                     }
-                    .buttonStyle(MediaControlButtonStyle())
                 }
             }
 

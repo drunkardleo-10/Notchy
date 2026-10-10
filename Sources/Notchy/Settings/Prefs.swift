@@ -30,6 +30,14 @@ enum Pref {
     static let brightnessHUD = "enableBrightnessHUD"
     static let airpodsHUD = "enableAirPodsHUD"
     static let glassLevel = "dynamicGlassLevel"
+    static let lockWidgets = "enableLockWidgets"
+    static let widgetBattery = "lockWidgetBattery"
+    static let widgetWeather = "lockWidgetWeather"
+    static let widgetAirQuality = "lockWidgetAirQuality"
+    static let widgetSun = "lockWidgetSun"
+    static let widgetEvent = "lockWidgetEvent"
+    static let widgetMedia = "lockWidgetMedia"
+    static let lockWidgetsOffset = "lockWidgetsOffset"
 
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
@@ -46,6 +54,9 @@ enum Pref {
             volumeHUD: true, brightnessHUD: true, airpodsHUD: true,
             volumeHUDStyle: VolumeHUDStyle.inline.rawValue,
             glassLevel: 0.5,
+            lockWidgets: false, widgetBattery: true, widgetWeather: true,
+            widgetAirQuality: true, widgetSun: true, widgetEvent: false, widgetMedia: true,
+            lockWidgetsOffset: 0.0,
         ])
     }
 

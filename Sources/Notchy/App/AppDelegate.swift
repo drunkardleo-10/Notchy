@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let calendar = CalendarModel()
     let agents = AgentMonitor()
     let system = SystemMonitor()
+    private var lockWidgets: LockWidgetsController?
 
     private var hudMonitor: HUDMonitor?
     private var primaryPanel: NotchPanel!
@@ -89,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         updater.start()
         setUpMonitors()
+        lockWidgets = LockWidgetsController(media: media)
         hudMonitor = HUDMonitor(states: { [weak self] in self?.allNotchStates ?? [] })
         hudMonitor?.onLockStateChanged = { [weak self] isLocked in
             self?.handleLockStateChanged(isLocked: isLocked)
@@ -440,6 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleLockStateChanged(isLocked: Bool) {
         self.isScreenLocked = isLocked
+        lockWidgets?.setLocked(isLocked)
         if isLocked {
             cancelPendingExpansion()
             cancelAllCollapseWork()
