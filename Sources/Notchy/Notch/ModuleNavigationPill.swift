@@ -53,8 +53,13 @@ struct ModuleNavigationPill: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(isActive ? Color.white : Color.white.opacity(0.45))
-                .contentTransition(.symbolEffect(.replace))
+                .id(icon)
+                .transition(.modifier(
+                    active: IconBlurMorph(blur: 5, opacity: 0, scale: 0.55),
+                    identity: IconBlurMorph(blur: 0, opacity: 1, scale: 1)
+                ))
         }
+        .animation(.easeInOut(duration: 0.24), value: icon)
         .frame(width: ModuleNavigationMetrics.width, height: slotHeight)
         .contentShape(Rectangle())
     }
@@ -101,6 +106,16 @@ struct ModuleNavigationPill: View {
         }
         .animation(NotchAnimation.tabSelect, value: selection)
         .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+    }
+}
+
+private struct IconBlurMorph: ViewModifier {
+    let blur: CGFloat
+    let opacity: Double
+    let scale: CGFloat
+
+    func body(content: Content) -> some View {
+        content.blur(radius: blur).opacity(opacity).scaleEffect(scale)
     }
 }
 
