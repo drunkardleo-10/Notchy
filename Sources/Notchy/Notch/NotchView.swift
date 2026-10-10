@@ -139,6 +139,8 @@ struct NotchView: View {
             return 0
         }
     }
+    private var wantsCompactTimer: Bool { activeTab == .timer && pomodoro.started }
+
     private var isCompact: Bool {
         !(state.showQueue || state.showLyrics)
     }
@@ -311,6 +313,10 @@ struct NotchView: View {
         .animation(expansionAnimation, value: liveSize?.width)
         .animation(expansionAnimation, value: liveSize?.height)
         .animation(expansionAnimation, value: state.agentPromptActive)
+        .animation(expansionAnimation, value: state.compactTimer)
+        .onChange(of: wantsCompactTimer, initial: true) { _, compact in
+            state.compactTimer = compact
+        }
         .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
         .onChange(of: media.title) { _, title in
             guard !title.isEmpty, showMediaActivity, state.hud == nil else { return }

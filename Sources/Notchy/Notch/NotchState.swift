@@ -61,6 +61,7 @@ final class NotchState: ObservableObject {
     static let fullExpandedSize = CGSize(width: 820, height: 235)
     static let agentPromptSize = CGSize(width: 520, height: 235)
     static let panelPadding: CGFloat = 24
+    static let compactTimerExtraHeight: CGFloat = 76
 
     @Published var showQueue = false {
         didSet {
@@ -90,6 +91,7 @@ final class NotchState: ObservableObject {
     var onLyricsClosed: (() -> Void)?
 
     @Published var agentPromptActive = false
+    @Published var compactTimer = false
 
     var expandedSize: CGSize {
         if agentPromptActive {
@@ -100,6 +102,9 @@ final class NotchState: ObservableObject {
         }
         if showQueue {
             return Self.queueExpandedSize
+        }
+        if compactTimer {
+            return CGSize(width: Self.compactExpandedSize.width, height: notchSize.height + Self.compactTimerExtraHeight)
         }
         return Self.compactExpandedSize
     }

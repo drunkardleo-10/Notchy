@@ -31,95 +31,47 @@ struct TimerView: View {
     }
 
     private var activeTimerView: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .stroke(tint.opacity(0.20), lineWidth: 3)
-                    Circle()
-                        .trim(from: 0, to: pomodoro.progress)
-                        .stroke(
-                            tint,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round)
-                        )
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.3), value: pomodoro.progress)
-                    PhaseGlyph(phase: pomodoro.phase, running: pomodoro.running, tint: tint)
-                        .frame(width: 22, height: 22)
+        HStack(spacing: 10) {
+            Button {
+                withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.94)) {
+                    pomodoro.startPause()
                 }
-                .shadow(color: tint.opacity(pomodoro.running ? 0.35 : 0), radius: 5)
-                .animation(.easeInOut(duration: 0.4), value: pomodoro.running)
-                .frame(width: 40, height: 40)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(pomodoro.phase.title)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(tint)
-
-                        if !pomodoro.running {
-                            Text("Paused")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.55))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.white.opacity(0.10), in: Capsule())
-                        }
-                    }
-
-                    Text(pomodoro.formatted)
-                        .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
-                        .contentTransition(.numericText(countsDown: true))
-                        .animation(.easeOut(duration: 0.22), value: pomodoro.remaining)
-                }
+            } label: {
+                PlayPauseGlyph(showsPause: pomodoro.running, tint: tint, size: 14)
+                    .frame(width: 40, height: 40)
+                    .background(tint.opacity(0.28), in: Circle())
             }
+            .buttonStyle(PressScaleStyle())
 
-            HStack(spacing: 10) {
-                Button {
-                    withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.94)) {
-                        pomodoro.startPause()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        PlayPauseGlyph(showsPause: pomodoro.running, tint: tint, size: 10)
-                        Text(pomodoro.running ? "Pause" : "Resume")
-                            .contentTransition(.interpolate)
-                    }
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .background(tint.opacity(0.18), in: Capsule())
+            Button {
+                withAnimation(.interactiveSpring(response: 0.36, dampingFraction: 0.94)) {
+                    pomodoro.reset()
                 }
-                .buttonStyle(PressScaleStyle())
-
-                Button {
-                    withAnimation(.interactiveSpring(response: 0.36, dampingFraction: 0.94)) {
-                        pomodoro.reset()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.12), in: Circle())
-                }
-                .buttonStyle(PressScaleStyle())
-
-                Button {
-                    withAnimation(.interactiveSpring(response: 0.36, dampingFraction: 0.94)) {
-                        pomodoro.skip()
-                    }
-                } label: {
-                    Image(systemName: "forward.end.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.12), in: Circle())
-                }
-                .buttonStyle(PressScaleStyle())
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 40, height: 40)
+                    .background(Color.white.opacity(0.16), in: Circle())
             }
+            .buttonStyle(PressScaleStyle())
+
+            Spacer(minLength: 12)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(pomodoro.phase.title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(pomodoro.formatted)
+                    .font(.system(size: 38, weight: .semibold, design: .rounded).monospacedDigit())
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(.easeOut(duration: 0.22), value: pomodoro.remaining)
+            }
+            .lineLimit(1)
+            .foregroundStyle(tint)
+            .opacity(pomodoro.running ? 1 : 0.6)
+            .animation(.easeInOut(duration: 0.25), value: pomodoro.running)
         }
+        .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
