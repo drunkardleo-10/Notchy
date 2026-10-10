@@ -343,17 +343,16 @@ struct NotchView: View {
                     albumArtNamespace: albumArtNamespace,
                     visualizerNamespace: visualizerNamespace
                 )
-                case .shelf: ShelfView(shelf: shelf, targeted: state.dropTargeted)
-                case .clipboard: ClipboardView(clipboard: clipboard)
-                case .calendar: CalendarView(calendar: calendar)
-                case .timer: TimerView(pomodoro: pomodoro)
-                case .claude: AgentsView(agents: agents)
-                case .system: SystemView(system: system)
-                case .mirror: MirrorView()
-                case .tools: ToolsView(highAlert: highAlert)
+                case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
+                case .clipboard: inset(ClipboardView(clipboard: clipboard))
+                case .calendar: inset(CalendarView(calendar: calendar))
+                case .timer: inset(TimerView(pomodoro: pomodoro))
+                case .claude: inset(AgentsView(agents: agents))
+                case .system: inset(SystemView(system: system))
+                case .mirror: inset(MirrorView())
+                case .tools: inset(ToolsView(highAlert: highAlert))
                 }
             }
-            .padding(.horizontal, activeTab == .media ? 0 : 30)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.asymmetric(
                 insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
@@ -363,6 +362,10 @@ struct NotchView: View {
         }
         .padding(.bottom, isCompact ? 18 : 20)
         .foregroundStyle(.white)
+    }
+
+    private func inset<Content: View>(_ view: Content) -> some View {
+        view.padding(.horizontal, 30)
     }
 }
 
