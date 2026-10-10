@@ -94,8 +94,14 @@ struct NotchView: View {
         return media.isPlaying || !hidePausedActivity
     }
 
+    private var showsTimerInNotch: Bool { pomodoro.started && !showMediaActivity }
+
+    private var showsFocusDot: Bool {
+        pomodoro.started && showMediaActivity && !state.expanded && !hidesLiveActivityForHUD
+    }
+
     private var liveSize: CGSize? {
-        if pomodoro.started {
+        if showsTimerInNotch {
             return NotchAccessoryLayout.size(
                 notch: state.notchSize,
                 leadingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted),
@@ -237,7 +243,7 @@ struct NotchView: View {
 
                 if let size = liveSize {
                     Group {
-                        if pomodoro.started { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
+                        if showsTimerInNotch { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
                         else if let activity = agentActivity {
                             AgentActivityView(activity: activity, notch: state.notchSize)
                                 .transition(.opacity)
@@ -263,6 +269,16 @@ struct NotchView: View {
             .frame(width: width, height: height, alignment: .top)
             .clipShape(shape)
             .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 14, y: 6)
+            .overlay(alignment: .topLeading) {
+                FocusDotView(
+                    pomodoro: pomodoro,
+                    active: showsFocusDot,
+                    detailOpen: state.focusDetailOpen,
+                    hovering: state.hoveringFocusDot,
+                    anchorWidth: collapsedSize.width,
+                    notchHeight: state.notchSize.height
+                )
+            }
             .offset(x: collapsedHorizontalOffset)
             .scaleEffect(!state.expanded && state.hoveringNotch ? 1.05 : 1.0, anchor: .top)
             .overlay(alignment: .trailing) {
@@ -297,8 +313,15 @@ struct NotchView: View {
         .animation(expansionAnimation, value: state.agentPromptActive)
         .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
         .onChange(of: media.title) { _, title in
-            guard !title.isEmpty, showMediaActivity, state.hud == nil, !pomodoro.started else { return }
+            guard !title.isEmpty, showMediaActivity, state.hud == nil else { return }
             state.announceTrack()
+        }
+        .onChange(of: showsFocusDot) { _, showing in
+            state.focusDotVisible = showing
+            if !showing {
+                state.focusDetailOpen = false
+                state.hoveringFocusDot = false
+            }
         }
         .onChange(of: state.expanded) { _, expanded in
             if expanded {

@@ -485,7 +485,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dragBaseline = NSPasteboard(name: .drag).changeCount
             draggingContent = false
             let loc = NSEvent.mouseLocation
-            if !state.expanded && (state.hoveringNotch || isMouseInNotch(loc)) {
+            if state.focusDotVisible && isMouseInFocusDot(loc) {
+                if Pref.bool(Pref.hapticFeedback) {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                }
+                withAnimation(NotchAnimation.spring(response: 0.42, dampingFraction: 0.78)) {
+                    state.focusDetailOpen.toggle()
+                }
+                return
+            }
+            if state.focusDetailOpen {
+                state.focusDetailOpen = false
+            }
+            if !state.expanded && isPointerOverCollapsedNotch(loc) {
                 if state.hoveringNotch && isMouseInTrailingLiveActivity(loc) {
                     if Pref.bool(Pref.hapticFeedback) {
                         NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
@@ -605,6 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        updateHoveringFocusDot(isMouseInFocusDot(loc))
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
@@ -779,6 +792,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let slackY: CGFloat = 14 + (agentActivityShowing ? AgentActivityLayout.rowHeight : 0)
             return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         }
+    }
+
+    private func isPointerOverCollapsedNotch(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+        let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
+        let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 4 : 10
+        return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - 8 && loc.y <= f.maxY + 4
+    }
+
+    private func updateHoveringFocusDot(_ hovering: Bool) {
+        let shouldHover = hovering && state.focusDotVisible && !state.expanded
+        guard state.hoveringFocusDot != shouldHover else { return }
+        state.hoveringFocusDot = shouldHover
+    }
+
+    private func isMouseInFocusDot(_ loc: NSPoint) -> Bool {
+        guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
+        let f = screen.frame
+        let notch = state.notchSize
+        let diameter = FocusDotLayout.diameter(notchHeight: notch.height)
+        let notchRight = f.midX + (notch.width + LiveActivityLayout.sideWidth * 2) / 2
+        let minX = notchRight + FocusDotLayout.gap / 2
+        let maxX = notchRight + FocusDotLayout.gap + diameter + 8
+        return loc.x >= minX && loc.x <= maxX && loc.y >= f.maxY - notch.height - 8 && loc.y <= f.maxY + 4
     }
 
     private func isMouseInTrailingLiveActivity(_ loc: NSPoint) -> Bool {
