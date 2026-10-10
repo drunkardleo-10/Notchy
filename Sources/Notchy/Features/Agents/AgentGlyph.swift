@@ -42,14 +42,7 @@ private enum AgentGlyphArt {
     }
 
     private static func drawClaude(_ c: inout GraphicsContext, _ u: CGFloat) {
-        for i in 0..<12 {
-            let angle = Double(i) * .pi / 6
-            let outer: CGFloat = i % 2 == 0 ? 11 : 8.4
-            var ray = Path()
-            ray.move(to: point(12 + 3 * cos(angle), 12 + 3 * sin(angle), u))
-            ray.addLine(to: point(12 + outer * cos(angle), 12 + outer * sin(angle), u))
-            c.stroke(ray, with: .color(claude), style: StrokeStyle(lineWidth: 1.7 * u, lineCap: .round))
-        }
+        c.fill(ClaudeLogo.path(in: u * 24), with: .color(claude))
     }
 
     private static func drawCodex(_ c: inout GraphicsContext, _ u: CGFloat) {

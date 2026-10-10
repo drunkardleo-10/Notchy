@@ -102,8 +102,16 @@ struct NotchView: View {
                 trailingWidth: PomodoroLayout.sideWidth(for: pomodoro.formatted)
             )
         }
-        guard showMediaActivity else { return nil }
-        return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
+        if showMediaActivity {
+            return LiveActivityLayout.size(notch: state.notchSize, peeking: state.showsTrackPeek)
+        }
+        guard agentActivity != nil else { return nil }
+        return AgentActivityLayout.size(notch: state.notchSize)
+    }
+
+    private var agentActivity: AgentActivity? {
+        guard liveOn, Pref.bool(Pref.claude), !pomodoro.started, !showMediaActivity else { return nil }
+        return agents.activity
     }
     private var collapsedSize: CGSize { hudSize ?? liveSize ?? state.notchSize }
     private var collapsedHorizontalOffset: CGFloat {
@@ -230,7 +238,10 @@ struct NotchView: View {
                 if let size = liveSize {
                     Group {
                         if pomodoro.started { PomodoroPillView(pomodoro: pomodoro, notch: state.notchSize) }
-                        else {
+                        else if let activity = agentActivity {
+                            AgentActivityView(activity: activity, notch: state.notchSize)
+                                .transition(.opacity)
+                        } else {
                             LiveActivityView(
                                 media: media,
                                 notch: state.notchSize,
@@ -255,7 +266,7 @@ struct NotchView: View {
             .offset(x: collapsedHorizontalOffset)
             .scaleEffect(!state.expanded && state.hoveringNotch ? 1.05 : 1.0, anchor: .top)
             .overlay(alignment: .trailing) {
-                if tabs.count > 1 {
+                if tabs.count > 1 && !state.agentPromptActive {
                     ModuleNavigationPill(tabs: tabs, selection: activeTab, onSelect: state.selectTab)
                         .blur(radius: state.expanded ? 0 : 10)
                         .opacity(state.expanded ? 1 : 0)
@@ -282,6 +293,8 @@ struct NotchView: View {
         .animation(expansionAnimation, value: volumeHUDStyleRawValue)
         .animation(expansionAnimation, value: liveSize != nil)
         .animation(expansionAnimation, value: liveSize?.width)
+        .animation(expansionAnimation, value: liveSize?.height)
+        .animation(expansionAnimation, value: state.agentPromptActive)
         .animation(NotchAnimation.spring(response: 0.28, dampingFraction: 0.78), value: state.showsTrackPeek)
         .onChange(of: media.title) { _, title in
             guard !title.isEmpty, showMediaActivity, state.hud == nil, !pomodoro.started else { return }
@@ -335,30 +348,32 @@ struct NotchView: View {
     private var content: some View {
         VStack(spacing: 4) {
             Spacer().frame(height: max(state.notchSize.height + 4, 16))
-            Group {
-                switch activeTab {
-                case .media: MediaView(
-                    media: media,
-                    state: state,
-                    albumArtNamespace: albumArtNamespace,
-                    visualizerNamespace: visualizerNamespace
-                )
-                case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
-                case .clipboard: inset(ClipboardView(clipboard: clipboard))
-                case .calendar: inset(CalendarView(calendar: calendar))
-                case .timer: inset(TimerView(pomodoro: pomodoro))
-                case .claude: inset(AgentsView(agents: agents))
-                case .system: inset(SystemView(system: system))
-                case .mirror: inset(MirrorView())
-                case .tools: inset(ToolsView(highAlert: highAlert))
+            AgentPromptGate(center: agents.requests) {
+                Group {
+                    switch activeTab {
+                    case .media: MediaView(
+                        media: media,
+                        state: state,
+                        albumArtNamespace: albumArtNamespace,
+                        visualizerNamespace: visualizerNamespace
+                    )
+                    case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
+                    case .clipboard: inset(ClipboardView(clipboard: clipboard))
+                    case .calendar: inset(CalendarView(calendar: calendar))
+                    case .timer: inset(TimerView(pomodoro: pomodoro))
+                    case .claude: inset(AgentsView(agents: agents))
+                    case .system: inset(SystemView(system: system))
+                    case .mirror: inset(MirrorView())
+                    case .tools: inset(ToolsView(highAlert: highAlert))
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.asymmetric(
+                    insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
+                    removal: .move(edge: state.tabNavigationDirection > 0 ? .top : .bottom).combined(with: .opacity)
+                ))
+                .animation(NotchAnimation.tabSelect, value: activeTab)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .transition(.asymmetric(
-                insertion: .move(edge: state.tabNavigationDirection > 0 ? .bottom : .top).combined(with: .opacity),
-                removal: .move(edge: state.tabNavigationDirection > 0 ? .top : .bottom).combined(with: .opacity)
-            ))
-            .animation(NotchAnimation.tabSelect, value: activeTab)
         }
         .padding(.bottom, isCompact ? 18 : 20)
         .foregroundStyle(.white)

@@ -126,7 +126,7 @@ private struct AgentDetailView: View {
     let usage: AgentUsage?
     @ObservedObject var agents: AgentMonitor
     @State private var limitsEnabled = ClaudeStatusline.isEnabled
-    @State private var copied = false
+    @State private var hooksInstalled = ClaudeHooks.isInstalled
 
     private var sessionSummary: (text: String, color: Color)? {
         guard kind.id == "claude", !agents.sessions.isEmpty else { return nil }
@@ -165,6 +165,16 @@ private struct AgentDetailView: View {
             } else {
                 emptyState
             }
+
+            if kind.id == "claude" && !hooksInstalled {
+                HStack(spacing: 8) {
+                    Text("Approve permissions from the notch")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .lineLimit(1)
+                    pill("Install hooks") { hooksInstalled = ClaudeHooks.install() }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -181,13 +191,6 @@ private struct AgentDetailView: View {
                 HStack(spacing: 6) {
                     if !limitsEnabled {
                         pill("Enable limits") { limitsEnabled = ClaudeStatusline.enable() }
-                    }
-                    if agents.sessions.isEmpty {
-                        pill(copied ? "Copied" : "Copy hook config") {
-                            agents.copyHookConfig()
-                            copied = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
-                        }
                     }
                 }
             }

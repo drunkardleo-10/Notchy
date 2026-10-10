@@ -104,9 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hudMonitor?.showMessage(icon: "calendar", title: event.title,
                                           subtitle: minutes <= 1 ? "Starting now" : "Starts in \(minutes) min", duration: 6)
         }
+        agents.requests.onChange = { [weak self] in self?.syncAgentPrompt() }
         agents.onTransition = { [weak self] session in
+            guard let self, self.media.isPlaying || !Pref.bool(Pref.liveActivity) else { return }
             let done = session.state == .done
-            self?.hudMonitor?.showMessage(icon: done ? "checkmark.circle.fill" : "exclamationmark.bubble.fill",
+            self.hudMonitor?.showMessage(icon: done ? "checkmark.circle.fill" : "exclamationmark.bubble.fill",
                                           title: done ? "Claude finished" : "Claude needs you",
                                           subtitle: session.project, duration: 5)
         }
@@ -577,7 +579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 instance.state.hoveringArtwork = false
             }
             for (id, instance) in displayInstances where instance.state.expanded {
-                if pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
+                if instance.state.agentPromptActive || pointerIsInsideExpandedNotch(loc, state: instance.state, panel: instance.panel) {
                     cancelCollapseWork(for: id)
                 } else {
                     scheduleCollapse(for: instance)
@@ -587,7 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if state.expanded {
             let id = activeDisplayID ?? "primary"
-            if pointerIsInsideExpandedNotch(loc, state: state, panel: panel) {
+            if state.agentPromptActive || pointerIsInsideExpandedNotch(loc, state: state, panel: panel) {
                 collapseWork?.cancel()
                 collapseWork = nil
                 cancelCollapseWork(for: id)
@@ -607,9 +609,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
-        let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
-        let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
-        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8) + (state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0)
+        let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
+        let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
+        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8)
+            + (state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0)
+            + (agentActivityShowing ? AgentActivityLayout.rowHeight : 0)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         let allowedDisplay = NotchGeometry.allowsHoverExpansion(on: screen)
         let isHovering = hot && allowedDisplay
@@ -640,6 +644,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         expandWork = work
         pendingExpandDisplayID = targetID
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private var agentActivityShowing: Bool {
+        Pref.bool(Pref.claude) && Pref.bool(Pref.liveActivity) && agents.activity != nil && !media.isPlaying && !pomodoro.started
+    }
+
+    private func syncAgentPrompt() {
+        let active = agents.requests.current != nil
+        let targetState = state
+        let targetPanel: NotchPanel = panel
+        guard targetState.agentPromptActive != active else { return }
+        withAnimation(NotchAnimation.notchOpen(for: targetPanel.screen)) {
+            targetState.agentPromptActive = active
+        }
+        if active {
+            if !targetState.expanded {
+                setExpanded(true, interactive: false, openingHaptic: false, state: targetState, panel: targetPanel, displayID: activeDisplayID ?? "primary")
+            }
+            targetPanel.ignoresMouseEvents = false
+            if Pref.bool(Pref.hapticFeedback) {
+                NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+            }
+        } else {
+            evaluateHover()
+        }
     }
 
     private func cancelPendingExpansion() {
@@ -746,9 +775,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 && loc.y >= f.maxY - s.height - 14 && loc.y <= f.maxY + 4
         } else {
             if state.hoveringNotch { return true }
-            let liveShowing = pomodoro.started || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
-            let slackX: CGFloat = liveShowing ? LiveActivityLayout.sideWidth + 12 : 20
-            let slackY: CGFloat = 14
+            let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
+            let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 12 : 20
+            let slackY: CGFloat = 14 + (agentActivityShowing ? AgentActivityLayout.rowHeight : 0)
             return abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
         }
     }
@@ -756,7 +785,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func isMouseInTrailingLiveActivity(_ loc: NSPoint) -> Bool {
         guard let screen = panel.screen ?? NotchGeometry.targetScreen() else { return false }
         let liveShowing = Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack
-        guard liveShowing else { return false }
+        guard liveShowing, !agentActivityShowing else { return false }
         let f = screen.frame
         let notch = state.notchSize
         let minX = f.midX + notch.width / 2 - 4
