@@ -4,6 +4,15 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.5 — 2026-10-10
+
+- Interactive onboarding setup guide with animated mascot, speech bubbles, and stage dimmer
+- Guided permission verification for Accessibility, Screen Recording, Calendars, and Camera
+- Agent radar step detecting local AI agents (Claude, Codex, Devin, OpenCode) with visual status rings
+- Module configuration and appearance selection during first-time setup
+- Playground step allowing users to try Notch gestures before finishing
+- Auto-collapse agent activity headline after duration
+
 ## 1.0.4 — 2026-10-10
 
 - Lock screen widgets support with real-time weather conditions, air quality, UV, and sunrise
