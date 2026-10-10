@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound(named: "Glass")?.play()
             self?.hudMonitor?.showMessage(icon: phase == .focus ? "checkmark.circle.fill" : "cup.and.saucer.fill",
                                           title: phase == .focus ? "Focus complete" : "Break over",
-                                          subtitle: phase == .focus ? "Time for a break" : "Back to focus", duration: 5)
+                                          subtitle: phase == .focus ? "Time for a break" : "Back to focus", duration: 3)
         }
         calendar.onMeetingSoon = { [weak self] event, minutes in
             NSSound(named: "Glass")?.play()

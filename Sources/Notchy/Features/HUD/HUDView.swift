@@ -71,6 +71,7 @@ enum VolumeHUDStyle: CaseIterable, Identifiable {
 
 enum HUDLayout {
     static let sideWidth: CGFloat = 95
+    static let messageSideWidth: CGFloat = 118
     static let inlineVolumeLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
     static let inlineVolumeTrailingWidth: CGFloat = 80
     static let inlineSymbolLeadingWidth: CGFloat = LiveActivityLayout.sideWidth
@@ -104,12 +105,14 @@ enum HUDLayout {
                 leadingWidth: inlineSymbolLeadingWidth,
                 trailingWidth: inlineSymbolTrailingWidth
             )
+        case .message:
+            return NotchAccessoryLayout.size(notch: notch, leadingWidth: messageSideWidth, trailingWidth: messageSideWidth)
         default:
             break
         }
         var h = notch.height
         switch hud.kind {
-        case .airpods, .battery, .message: h += tallExtraHeight
+        case .airpods, .battery: h += tallExtraHeight
         default: break
         }
         return CGSize(
@@ -224,7 +227,7 @@ struct HUDView: View {
             case .battery(let percent, let state):
                 tallRow(icon: Self.batteryIcon(percent, state), title: state.title, subtitle: "\(percent)%", tint: state.tint)
             case .message(let icon, let title, let subtitle):
-                tallRow(icon: icon, title: title, subtitle: subtitle)
+                messageRow(icon: icon, title: title, subtitle: subtitle)
             case .lock(let unlocked):
                 if volumeStyle == .peek {
                     PeekHUDView(
@@ -291,6 +294,32 @@ struct HUDView: View {
             Text(text)
                 .font(.system(size: 11, weight: .medium))
                 .lineLimit(1)
+        }
+    }
+
+    private func messageRow(icon: String, title: String, subtitle: String) -> some View {
+        NotchAccessory(
+            notch: notch,
+            leadingWidth: HUDLayout.messageSideWidth,
+            trailingWidth: HUDLayout.messageSideWidth,
+            leadingAlignment: .leading,
+            trailingAlignment: .leading
+        ) {
+            Group {
+                if icon == "checkmark.circle.fill" {
+                    PixelCheck(cell: 2)
+                } else {
+                    Image(systemName: icon).font(.system(size: 14, weight: .semibold))
+                }
+            }
+            .padding(.leading, 18)
+        } trailing: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)
+                Text(subtitle).font(.system(size: 9.5)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
         }
     }
 
