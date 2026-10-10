@@ -4,6 +4,14 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.4 — 2026-10-10
+
+- Lock screen widgets support with real-time weather conditions, air quality, UV, and sunrise
+- Lock screen media playback card with interactive playback controls and album artwork
+- Dedicated Widgets settings pane to customize widget appearance and toggles
+- Detached focus dot indicator and morph transitions for active timers
+- Refined notch layout compacting and inline message notification badges
+
 ## 1.0.3 — 2026-10-10
 
 - Interactive Claude agent permission & question request prompt cards directly in the notch
