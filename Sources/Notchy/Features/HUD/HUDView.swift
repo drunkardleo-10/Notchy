@@ -305,14 +305,9 @@ struct HUDView: View {
             leadingAlignment: .leading,
             trailingAlignment: .leading
         ) {
-            Group {
-                if icon == "checkmark.circle.fill" {
-                    PixelCheck(cell: 2)
-                } else {
-                    Image(systemName: icon).font(.system(size: 14, weight: .semibold))
-                }
-            }
-            .padding(.leading, 18)
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .padding(.leading, 18)
         } trailing: {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title).font(.system(size: 11.5, weight: .semibold)).lineLimit(1)

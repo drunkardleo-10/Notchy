@@ -21,6 +21,7 @@ struct FocusDotView: View {
     let notchHeight: CGFloat
 
     @State private var progress: CGFloat = 0
+    @State private var detailProgress: CGFloat = 0
     @State private var pendingDetach: Task<Void, Never>?
 
     private var tint: Color { pomodoro.phase == .focus ? .orange : .green }
@@ -31,21 +32,31 @@ struct FocusDotView: View {
         return CGSize(width: dotCenter - FocusDetailLayout.width / 2, height: notchHeight + 4)
     }
 
-    private var detailAnchor: UnitPoint { UnitPoint(x: 0.5, y: 0) }
+    private var detailTravel: CGFloat {
+        (detailOffset.height + FocusDetailLayout.height / 2) - notchHeight / 2
+    }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             dot
-            if detailOpen && active {
-                FocusDetailCard(pomodoro: pomodoro)
-                    .offset(detailOffset)
-                    .transition(
-                        .scale(scale: 0.2, anchor: detailAnchor)
-                            .combined(with: .opacity)
-                    )
+            if detailProgress > 0.001 {
+                FocusDetailCard(
+                    pomodoro: pomodoro,
+                    progress: detailProgress,
+                    dotDiameter: FocusDotLayout.diameter(notchHeight: notchHeight),
+                    travel: detailTravel
+                )
+                .offset(detailOffset)
             }
         }
-        .animation(NotchAnimation.spring(response: 0.42, dampingFraction: 0.78), value: detailOpen)
+        .onChange(of: detailOpen) { _, open in
+            withAnimation(NotchAnimation.spring(response: 0.42, dampingFraction: 0.82)) {
+                detailProgress = open && active ? 1 : 0
+            }
+        }
+        .onChange(of: active) { _, isActive in
+            if !isActive { detailProgress = 0 }
+        }
     }
 
     private var dot: some View {

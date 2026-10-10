@@ -93,11 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hudMonitor?.onLockStateChanged = { [weak self] isLocked in
             self?.handleLockStateChanged(isLocked: isLocked)
         }
-        pomodoro.onFinish = { [weak self] phase in
+        pomodoro.onFinish = { _ in
             NSSound(named: "Glass")?.play()
-            self?.hudMonitor?.showMessage(icon: phase == .focus ? "checkmark.circle.fill" : "cup.and.saucer.fill",
-                                          title: phase == .focus ? "Focus complete" : "Break over",
-                                          subtitle: phase == .focus ? "Time for a break" : "Back to focus", duration: 3)
         }
         calendar.onMeetingSoon = { [weak self] event, minutes in
             NSSound(named: "Glass")?.play()
@@ -183,9 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = host
         position(panel, state: state, on: screen)
         panel.orderFrontRegardless()
-        if isScreenLocked {
-            NotchSpaceManager.shared.notchSpace.windows.insert(panel)
-        }
+        NotchSpaceManager.shared.notchSpace.windows.insert(panel)
         return panel
     }
 
@@ -466,13 +461,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             primaryPanel?.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
             for instance in additionalDisplays.values {
                 instance.panel.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
-                guard let self, !self.isScreenLocked else { return }
-                if let primaryPanel = self.primaryPanel { NotchSpaceManager.shared.notchSpace.windows.remove(primaryPanel) }
-                for instance in self.additionalDisplays.values {
-                    NotchSpaceManager.shared.notchSpace.windows.remove(instance.panel)
-                }
             }
             evaluateHover()
         }
