@@ -4,6 +4,15 @@ Versions follow [Semantic Versioning](https://semver.org). The version lives in 
 release tags are `v<version>`. To release: bump `VERSION`, add an entry here, commit, then
 `git tag v<version>`, run `./package.sh` and attach the release artifacts.
 
+## 1.0.6 — 2026-10-11
+
+- Multi-agent integrations for Claude, OpenCode, and Antigravity with dedicated Agents settings pane
+- Customizable agent mascot species (Otter, Fox, Owl, Bunny, Dragon) with animated live activity states
+- Detached agent dot status indicator and hoverable activity detail card
+- Animated pixel mascot macOS menu bar icon and bundled application icon
+- Visual star burst feedback effect on copy operations in Clipboard
+- Expanded Pomodoro timer pill width and padding for improved legibility
+
 ## 1.0.5 — 2026-10-10
 
 - Interactive onboarding setup guide with animated mascot, speech bubbles, and stage dimmer
