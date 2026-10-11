@@ -28,6 +28,7 @@ final class AgentInventory: ObservableObject {
         guard Pref.bool(Pref.claude) else { return }
         Task.detached { [weak self] in
             let found = AgentScanner.installed()
+            AgentIntegration.autoInstall(found)
             await self?.apply(installed: found)
         }
     }
@@ -46,7 +47,8 @@ final class AgentInventory: ObservableObject {
     }
 
     private func apply(installed found: [AgentKind]) {
-        if found != installed { installed = found }
+        let enabled = found.filter { AgentPrefs.isEnabled($0.id) }
+        if enabled != installed { installed = enabled }
     }
 
     private func apply(usage result: [String: AgentUsage], devin: AgentUsage?, refreshedDevin: Bool) {

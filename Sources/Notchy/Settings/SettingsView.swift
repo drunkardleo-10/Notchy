@@ -93,6 +93,8 @@ struct SettingsView: View {
                             media: $widgetMedia,
                             offset: $lockWidgetsOffset
                         )
+                    case .agents:
+                        AgentsSettingsTab()
                     case .general:
                         GeneralSettingsTab(
                             glassLevel: $glassLevel,

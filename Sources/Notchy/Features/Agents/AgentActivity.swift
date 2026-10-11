@@ -8,6 +8,7 @@ struct AgentActivity: Equatable {
     let sessionID: String
     let state: AgentSession.State
     let project: String
+    let species: MascotSpecies
     let pose: MascotPose
     let activeCount: Int
 
@@ -28,6 +29,7 @@ struct AgentActivity: Equatable {
         sessionID = session.id
         state = session.state
         project = session.project
+        species = MascotSpecies(agent: session.agent)
         activeCount = active.count
         pose = MascotPose(state: session.state, tool: session.tool)
     }
@@ -53,7 +55,20 @@ enum MascotPose: String, Equatable {
         case "TodoWrite", "TaskCreate", "TaskUpdate", "TaskList", "ExitPlanMode": .planning
         case "Task", "Agent": .delegating
         case "": .thinking
-        default: tool.hasPrefix("mcp__") ? .serving : .thinking
+        default: tool.hasPrefix("mcp__") ? .serving : guess(tool.lowercased())
         }
+    }
+
+    private static func guess(_ tool: String) -> MascotPose {
+        let rules: [(MascotPose, [String])] = [
+            (.serving, ["mcp"]),
+            (.delegating, ["task", "agent", "invoke"]),
+            (.planning, ["todo", "plan"]),
+            (.browsing, ["web", "url", "fetch", "browser"]),
+            (.coding, ["edit", "write", "patch", "replace", "create"]),
+            (.reading, ["read", "view", "grep", "glob", "list", "find", "search"]),
+            (.building, ["bash", "shell", "exec", "command", "terminal", "run"])
+        ]
+        return rules.first { _, keys in keys.contains { tool.contains($0) } }?.0 ?? .thinking
     }
 }

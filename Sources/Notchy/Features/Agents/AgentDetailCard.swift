@@ -21,7 +21,7 @@ struct AgentDetailCard: View, Animatable {
         switch activity.state {
         case .done: Color(red: 0.45, green: 0.9, blue: 0.55)
         case .attention: Color(red: 1, green: 0.66, blue: 0.3)
-        case .working: MascotSprites.claudeOrange
+        case .working: activity.species.accent
         }
     }
 
@@ -56,7 +56,7 @@ struct AgentDetailCard: View, Animatable {
     private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                PixelMascot(pose: activity.pose, cell: 1)
+                PixelMascot(pose: activity.pose, species: activity.species, cell: 1)
                 Spacer(minLength: 0)
                 Text(statusText)
                     .font(.system(size: 12, weight: .semibold))

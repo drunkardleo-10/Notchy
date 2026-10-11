@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum SettingsTab: Int, CaseIterable {
-    case modules, media, huds, widgets, general
+    case modules, media, huds, widgets, agents, general
     var title: String {
         switch self {
         case .modules: return "Modules"
         case .media: return "Media"
         case .huds: return "HUDs"
         case .widgets: return "Widgets"
+        case .agents: return "Agents"
         case .general: return "General"
         }
     }
@@ -17,6 +18,7 @@ enum SettingsTab: Int, CaseIterable {
         case .media: return "music.note"
         case .huds: return "slider.horizontal.3"
         case .widgets: return "widget.small"
+        case .agents: return "sparkles"
         case .general: return "gearshape.fill"
         }
     }
@@ -73,15 +75,17 @@ struct PillTabBar: View {
                         selection = tab
                     }
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 12, weight: .semibold))
                         Text(tab.title)
                             .font(.system(size: 13, weight: selection == tab ? .semibold : .medium))
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                     .foregroundStyle(selection == tab ? .white : .white.opacity(0.5))
                     .padding(.vertical, 7)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 8)
                     .background {
                         if selection == tab {
                             Capsule()

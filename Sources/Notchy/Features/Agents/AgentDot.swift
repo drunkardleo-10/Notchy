@@ -18,10 +18,11 @@ struct AgentDotView: View {
     private var mascot: some View {
         let shown = pose ?? lastPose
         let cell: CGFloat = 0.75
-        let box = MascotSprites.bounds(for: shown)
+        let species = (activity ?? lastActivity)?.species ?? .claude
+        let box = MascotSprites.bounds(for: shown, species: species)
         let dx = (CGFloat(MascotSprites.columns) / 2 - box.midX) * cell
         let dy = (CGFloat(MascotSprites.rows) / 2 - box.midY) * cell
-        return PixelMascot(pose: shown, cell: cell)
+        return PixelMascot(pose: shown, species: species, cell: cell)
             .offset(x: dx, y: dy)
     }
 

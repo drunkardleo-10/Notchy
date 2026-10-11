@@ -16,7 +16,7 @@ struct AgentRadarStep: View {
             VStack(alignment: .leading, spacing: 10) {
                 NotchyGuide(pose: guidePose, title: title, message: subtitle, cell: 2)
                 FoundAgentsRow(found: radar.found)
-                ClaudeLinkCard(radar: radar)
+                AgentLinkCard(radar: radar)
             }
         }
         .onAppear { radar.start() }
@@ -72,7 +72,7 @@ private struct FoundAgentsRow: View {
     }
 }
 
-private struct ClaudeLinkCard: View {
+private struct AgentLinkCard: View {
     @ObservedObject var radar: AgentRadarModel
 
     var body: some View {
@@ -82,17 +82,14 @@ private struct ClaudeLinkCard: View {
                 EmptyView()
             case .disconnected:
                 card {
-                    ClaudeSpark(size: 16)
+                    AgentStack(kinds: radar.connectable)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Connect Claude Code").font(.system(size: 12.5, weight: .semibold))
-                        Text("Adds hooks to ~/.claude/settings.json. A backup is saved first.")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(.white.opacity(0.5))
-                        Text(ClaudeHooks.eventNames.joined(separator: "  "))
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.32))
+                        Text("Connect \(radar.connectableNames)").font(.system(size: 12.5, weight: .semibold))
                             .lineLimit(1)
                             .truncationMode(.tail)
+                        Text("One click adds Notchy's hooks to each agent. Backups are saved first.")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer(minLength: 6)
                     OnboardingButton(title: "Connect") { radar.connect() }
@@ -101,35 +98,39 @@ private struct ClaudeLinkCard: View {
                 card {
                     PulseDot()
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Waiting for a Claude session").font(.system(size: 12.5, weight: .semibold))
-                        Text("Run any prompt with claude in your terminal to see it here.")
+                        Text("Waiting for a session").font(.system(size: 12.5, weight: .semibold))
+                        Text(radar.needsCodexTrust
+                             ? "Run any prompt to see it here. In Codex, trust Notchy once in /hooks."
+                             : "Run any prompt in one of your agents to see it here.")
                             .font(.system(size: 10.5))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer(minLength: 6)
                     ClaudeSpark(spinning: true, size: 16)
                 }
-            case .live(let project):
+            case .live(let agent, let project):
                 card {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(OnboardingTheme.success)
                         .symbolEffect(.bounce, value: project)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Claude Code is connected").font(.system(size: 12.5, weight: .semibold))
+                        Text("\(agent) is connected").font(.system(size: 12.5, weight: .semibold))
                         Text("Live session in \(project)")
                             .font(.system(size: 10.5))
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer(minLength: 0)
                 }
-            case .failed:
+            case .failed(let agents):
                 card {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(OnboardingTheme.warning)
-                    Text("Couldn't update ~/.claude/settings.json")
+                    Text("Couldn't connect \(agents.joined(separator: ", "))")
                         .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Spacer(minLength: 6)
                     OnboardingButton(title: "Retry", prominent: false) { radar.connect() }
                 }
@@ -144,5 +145,20 @@ private struct ClaudeLinkCard: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
             .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(Color.white.opacity(0.06)))
+    }
+}
+
+private struct AgentStack: View {
+    let kinds: [AgentKind]
+
+    var body: some View {
+        HStack(spacing: -5) {
+            ForEach(kinds.prefix(4)) { kind in
+                AgentGlyph(id: kind.id, size: 12)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(Color(white: 0.16)))
+                    .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+            }
+        }
     }
 }

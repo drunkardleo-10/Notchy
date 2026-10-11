@@ -32,9 +32,9 @@ struct AgentActivityView: View {
                 leadingAlignment: .leading,
                 trailingAlignment: .trailing
             ) {
-                PixelMascot(pose: activity.pose, cell: 1.75)
+                PixelMascot(pose: activity.pose, species: activity.species, cell: 1.75)
                     .padding(.leading, 14)
-                    .id(activity.pose)
+                    .id("\(activity.species.rawValue)-\(activity.pose.rawValue)")
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             } trailing: {
                 if activity.state == .done {

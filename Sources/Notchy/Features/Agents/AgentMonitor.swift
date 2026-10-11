@@ -3,6 +3,7 @@ import AppKit
 struct AgentSession: Identifiable, Equatable {
     enum State: String { case working, attention, done }
     let id: String
+    let agent: String
     let project: String
     let state: State
     let tool: String
@@ -29,6 +30,7 @@ final class AgentMonitor: ObservableObject {
 
     init() {
         ClaudeHooks.installScripts()
+        AgentHookScript.install()
         ClaudeStatusline.install()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
@@ -48,7 +50,10 @@ final class AgentMonitor: ObservableObject {
                   let state = AgentSession.State(rawValue: raw) else { continue }
             let updated = Date(timeIntervalSince1970: obj["updated"] as? Double ?? 0)
             if Date().timeIntervalSince(updated) > 3 * 3600 { try? fm.removeItem(at: file); continue }
-            found.append(AgentSession(id: id, project: obj["project"] as? String ?? "Claude Code", state: state,
+            let agent = obj["agent"] as? String ?? "claude"
+            guard AgentPrefs.isEnabled(agent) else { continue }
+            found.append(AgentSession(id: id, agent: agent,
+                                      project: obj["project"] as? String ?? MascotSpecies(agent: agent).displayName, state: state,
                                       tool: obj["tool"] as? String ?? "",
                                       message: obj["message"] as? String ?? "", updated: updated))
         }
@@ -67,7 +72,7 @@ final class AgentMonitor: ObservableObject {
     }
 
     private func revealHeadline(for activity: AgentActivity?) {
-        let key = activity.map { "\($0.sessionID)|\($0.state.rawValue)|\($0.project)" }
+        let key = activity.map { "\($0.species.rawValue)|\($0.sessionID)|\($0.state.rawValue)|\($0.project)" }
         guard key != headlineKey else { return }
         headlineKey = key
         hideHeadline?.cancel()

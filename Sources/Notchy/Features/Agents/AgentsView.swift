@@ -126,16 +126,19 @@ private struct AgentDetailView: View {
     let usage: AgentUsage?
     @ObservedObject var agents: AgentMonitor
     @State private var limitsEnabled = ClaudeStatusline.isEnabled
-    @State private var hooksInstalled = ClaudeHooks.isInstalled
+    @State private var hooksInstalled = false
+
+    private var integration: AgentIntegration? { AgentIntegration.forAgent(kind.id) }
 
     private var sessionSummary: (text: String, color: Color)? {
-        guard kind.id == "claude", !agents.sessions.isEmpty else { return nil }
-        let working = agents.sessions.filter { $0.state == .working }.count
-        if let waiting = agents.sessions.first(where: { $0.state == .attention }) {
+        let sessions = agents.sessions.filter { $0.agent == kind.id }
+        guard !sessions.isEmpty else { return nil }
+        let working = sessions.filter { $0.state == .working }.count
+        if let waiting = sessions.first(where: { $0.state == .attention }) {
             return (waiting.message.isEmpty ? "Needs your input" : waiting.message, .orange)
         }
         if working > 0 { return ("\(working) working", .blue) }
-        return ("\(agents.sessions.count) idle", .white.opacity(0.45))
+        return ("\(sessions.count) idle", .white.opacity(0.45))
     }
 
     var body: some View {
@@ -166,17 +169,18 @@ private struct AgentDetailView: View {
                 emptyState
             }
 
-            if kind.id == "claude" && !hooksInstalled {
+            if let integration, !hooksInstalled {
                 HStack(spacing: 8) {
-                    Text("Approve permissions from the notch")
+                    Text(integration.caption)
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.5))
                         .lineLimit(1)
-                    pill("Install hooks") { hooksInstalled = ClaudeHooks.install() }
+                    pill("Install hooks") { hooksInstalled = integration.install() }
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .onAppear { hooksInstalled = integration?.isInstalled() ?? true }
     }
 
     @ViewBuilder

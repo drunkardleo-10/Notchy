@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PixelMascot: View {
     let pose: MascotPose
+    var species: MascotSpecies = .claude
     var cell: CGFloat = 2
     var animated = true
 
@@ -23,7 +24,7 @@ struct PixelMascot: View {
 
     private func canvas(frame: Int) -> some View {
         Canvas { context, _ in
-            for layer in MascotSprites.layers(for: pose, frame: frame) {
+            for layer in MascotSprites.layers(for: pose, species: species, frame: frame) {
                 for (row, line) in layer.pixels.enumerated() {
                     for (column, key) in line.enumerated() {
                         guard let color = MascotSprites.palette[key] else { continue }
@@ -73,11 +74,11 @@ enum MascotSprites {
         "P": Color(red: 0.45, green: 0.40, blue: 0.85),
         "q": Color(red: 0.30, green: 0.25, blue: 0.65),
         "c": Color(red: 0.45, green: 0.95, blue: 0.80)
-    ]
+    ].merging(MascotSpecies.palette) { current, _ in current }
 
-    static func bounds(for pose: MascotPose) -> CGRect {
+    static func bounds(for pose: MascotPose, species: MascotSpecies = .claude) -> CGRect {
         var minX = Int.max, minY = Int.max, maxX = Int.min, maxY = Int.min
-        for layer in layers(for: pose, frame: 0) {
+        for layer in layers(for: pose, species: species, frame: 0) {
             for (row, line) in layer.pixels.enumerated() {
                 for (column, key) in line.enumerated() where palette[key] != nil {
                     minX = min(minX, layer.x + column)
@@ -91,7 +92,7 @@ enum MascotSprites {
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
     }
 
-    static func layers(for pose: MascotPose, frame: Int) -> [Layer] {
+    static func layers(for pose: MascotPose, species: MascotSpecies = .claude, frame: Int) -> [Layer] {
         let bounce = pose == .celebrating && frame == 1 ? -1 : 0
         let walking = pose != .celebrating
         let legs = walking ? frame : 0
@@ -99,57 +100,46 @@ enum MascotSprites {
         case .thinking:
             let lift = frame == 1 ? 1 : 0
             return [
-                Layer(x: 2, y: 3, pixels: body(armsUp: true, happy: false, legs: 0)),
+                Layer(x: 2, y: 3, pixels: species.body(armsUp: true, happy: false, legs: 0)),
                 Layer(x: 0, y: 1 + lift, pixels: barbell)
             ]
         case .celebrating:
             return [
-                Layer(x: 1, y: 3 + bounce, pixels: body(armsUp: true, happy: true, legs: legs)),
+                Layer(x: 1, y: 3 + bounce, pixels: species.body(armsUp: true, happy: true, legs: legs)),
                 Layer(x: 17, y: 1 + bounce, pixels: check),
                 Layer(x: 16, y: frame == 0 ? 0 : 1, pixels: ["c"]),
                 Layer(x: 23, y: frame == 0 ? 1 : 0, pixels: ["c"]),
                 Layer(x: 23, y: 6, pixels: ["c"])
             ]
         case .coding:
-            return [standing(legs), Layer(x: 15, y: 3, pixels: codeWindow)]
+            return [standing(legs, species), Layer(x: 15, y: 3, pixels: codeWindow)]
         case .reading:
-            return [standing(legs), Layer(x: 16, y: 4 + (frame == 1 ? -1 : 0), pixels: page)]
+            return [standing(legs, species), Layer(x: 16, y: 4 + (frame == 1 ? -1 : 0), pixels: page)]
         case .browsing:
-            return [standing(legs), Layer(x: 16, y: 3, pixels: frame == 0 ? globe : globeTurned)]
+            return [standing(legs, species), Layer(x: 16, y: 3, pixels: frame == 0 ? globe : globeTurned)]
         case .building:
             return [
-                standing(legs),
+                standing(legs, species),
                 Layer(x: 2, y: 2, pixels: hardHat),
                 Layer(x: 16, y: 4 + (frame == 1 ? 1 : 0), pixels: wrench)
             ]
         case .planning:
             return [
-                standing(legs),
+                standing(legs, species),
                 Layer(x: 16, y: 3, pixels: checklist),
                 Layer(x: 21, y: 0, pixels: frame == 0 ? sparkle : sparkleSmall)
             ]
         case .delegating:
-            return [standing(legs), Layer(x: 15, y: 2, pixels: frame == 0 ? magic : magicAlt)]
+            return [standing(legs, species), Layer(x: 15, y: 2, pixels: frame == 0 ? magic : magicAlt)]
         case .serving:
-            return [standing(legs), Layer(x: 15, y: 3, pixels: frame == 0 ? servers : serversBlink)]
+            return [standing(legs, species), Layer(x: 15, y: 3, pixels: frame == 0 ? servers : serversBlink)]
         case .alert:
-            return [standing(0), Layer(x: 16, y: frame == 0 ? 1 : 0, pixels: bubble)]
+            return [standing(0, species), Layer(x: 16, y: frame == 0 ? 1 : 0, pixels: bubble)]
         }
     }
 
-    private static func standing(_ legs: Int) -> Layer {
-        Layer(x: 1, y: 5, pixels: body(armsUp: false, happy: false, legs: legs))
-    }
-
-    private static func body(armsUp: Bool, happy: Bool, legs: Int) -> [String] {
-        let plain = "..oooooooooo.."
-        let eyes = "..ookooookoo.."
-        let mouth = happy ? "..ooowwwwooo.." : "..oooowwoooo.."
-        let feet = legs == 0 ? "..o.o....o.o.." : "...o.o....o.o."
-        if armsUp {
-            return ["o............o", "o............o", "oooooooooooooo", plain, eyes, mouth, plain, plain, feet]
-        }
-        return [plain, plain, eyes, mouth, "oooooooooooooo", plain, feet]
+    private static func standing(_ legs: Int, _ species: MascotSpecies) -> Layer {
+        Layer(x: 1, y: 5, pixels: species.body(armsUp: false, happy: false, legs: legs))
     }
 
     private static let barbell = [

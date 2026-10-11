@@ -112,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         agents.requests.onChange = { [weak self] in self?.syncAgentPrompt() }
         agents.onTransition = { [weak self] session in
             guard let self, session.state == .attention, self.media.isPlaying || !Pref.bool(Pref.liveActivity) else { return }
-            self.hudMonitor?.showMessage(icon: "exclamationmark.bubble.fill", title: "Claude needs you",
+            self.hudMonitor?.showMessage(icon: "exclamationmark.bubble.fill", title: "\(MascotSpecies(agent: session.agent).displayName) needs you",
                                           subtitle: session.project, duration: 5)
         }
         highAlert.onChange = { [weak self] on in

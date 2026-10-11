@@ -58,7 +58,7 @@ enum ClaudeHooks {
             return time.time() - os.path.getmtime(alive) > limit
         except OSError:
             return True
-    if stale(5):
+    if stale(5) or os.path.exists(os.path.join(base, "disabled", "claude")):
         sys.exit(0)
     try:
         data = json.load(sys.stdin)
