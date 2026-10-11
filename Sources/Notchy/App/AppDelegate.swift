@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var basket: BasketController!
     private var statusItem: NSStatusItem!
+    private var statusIcon: StatusItemIcon?
     private let updater = AppUpdater()
     private var settingsWindow: NSWindow?
     private var monitors: [Any] = []
@@ -318,7 +319,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "notchy")
+        if let button = statusItem.button {
+            let icon = StatusItemIcon(button: button)
+            if icon.hasIcon {
+                statusIcon = icon
+            } else {
+                button.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "notchy")
+            }
+        }
         let menu = NSMenu()
         menu.addItem(withTitle: "Open Notch", action: #selector(toggleNotch), keyEquivalent: "")
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")

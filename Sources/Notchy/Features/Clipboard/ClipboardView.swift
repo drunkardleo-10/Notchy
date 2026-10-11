@@ -128,6 +128,7 @@ struct ClipboardCardView: View {
     let onFlash: (String) -> Void
     let onDelete: (ClipItem) -> Void
     @State private var hovering = false
+    @State private var starBurst = 0
 
     private let cardWidth: CGFloat = 120
     private let previewHeight: CGFloat = 68
@@ -203,41 +204,47 @@ struct ClipboardCardView: View {
         return NSItemProvider()
     }
 
-    @ViewBuilder
     private func favoriteBadge(_ hovering: Bool) -> some View {
-        if item.favorite || hovering {
-            Button {
-                clipboard.toggleFavorite(item)
-            } label: {
-                Image(systemName: item.favorite ? "star.fill" : "star")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(item.favorite ? Color.yellow : Color.white)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(Color(white: 0.15).opacity(0.95)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-            }
-            .buttonStyle(.plain)
-            .offset(x: -6, y: -6)
+        let visible = item.favorite || hovering
+        return Button {
+            clipboard.toggleFavorite(item)
+        } label: {
+            Image(systemName: item.favorite ? "star.fill" : "star")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(item.favorite ? Color.yellow : Color.white)
+                .symbolEffect(.bounce, value: starBurst)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color(white: 0.15).opacity(0.95)))
+                .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                .overlay { StarBurst(trigger: starBurst) }
+        }
+        .buttonStyle(.plain)
+        .offset(x: -6, y: -6)
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .animation(.easeOut(duration: 0.1), value: visible)
+        .onChange(of: item.favorite) { _, favorite in
+            if favorite { starBurst += 1 }
         }
     }
 
-    @ViewBuilder
     private func deleteButton(_ hovering: Bool) -> some View {
-        if hovering {
-            Button {
-                onDelete(item)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(Color(white: 0.15).opacity(0.95)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-            }
-            .buttonStyle(.plain)
-            .offset(x: 6, y: -6)
+        Button {
+            onDelete(item)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(Color(white: 0.15).opacity(0.95)))
+                .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
         }
+        .buttonStyle(.plain)
+        .offset(x: 6, y: -6)
+        .opacity(hovering ? 1 : 0)
+        .allowsHitTesting(hovering)
+        .animation(.easeOut(duration: 0.1), value: hovering)
     }
 
     @ViewBuilder
@@ -255,6 +262,32 @@ struct ClipboardCardView: View {
             }
             .buttonStyle(.plain)
             .padding(5)
+        }
+    }
+}
+
+private struct StarBurst: View {
+    let trigger: Int
+    @State private var progress: CGFloat = 1
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.yellow.opacity(0.8), lineWidth: 1.5)
+                .scaleEffect(0.8 + progress * 0.9)
+            ForEach(0..<6, id: \.self) { index in
+                Circle()
+                    .fill(Color.yellow)
+                    .frame(width: 3, height: 3)
+                    .offset(y: -(10 + progress * 9))
+                    .rotationEffect(.degrees(Double(index) * 60))
+            }
+        }
+        .opacity(progress >= 1 ? 0 : 1 - Double(progress))
+        .allowsHitTesting(false)
+        .onChange(of: trigger) { _, _ in
+            progress = 0
+            withAnimation(.easeOut(duration: 0.5)) { progress = 1 }
         }
     }
 }

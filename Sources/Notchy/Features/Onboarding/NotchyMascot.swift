@@ -4,6 +4,7 @@ struct NotchyMascot: View {
     let pose: NotchyPose
     var cell: CGFloat = 2
     var animated = true
+    var frame = 0
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,7 +17,7 @@ struct NotchyMascot: View {
                     canvas(frame: Int(context.date.timeIntervalSinceReferenceDate / duration) % count)
                 }
             } else {
-                canvas(frame: 0)
+                canvas(frame: frame)
             }
         }
         .frame(width: CGFloat(NotchyMascotSprites.columns) * cell, height: CGFloat(NotchyMascotSprites.rows) * cell)

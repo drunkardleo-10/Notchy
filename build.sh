@@ -14,6 +14,16 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/notchy"
 
+if [ -f logo/notchy-mascot.png ]; then
+  ICONSET=$(mktemp -d)/AppIcon.iconset
+  mkdir -p "$ICONSET" "$APP/Contents/Resources"
+  for size in 16 32 128 256 512; do
+    sips -z $size $size logo/notchy-mascot.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+    sips -z $((size * 2)) $((size * 2)) logo/notchy-mascot.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+fi
+
 SPARKLE_FRAMEWORK=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
 mkdir -p "$APP/Contents/Frameworks"
 ditto "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/Sparkle.framework"
@@ -36,6 +46,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>notchy</string>
   <key>CFBundleIdentifier</key><string>com.leo.notchy</string>
   <key>CFBundleExecutable</key><string>notchy</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD</string>
