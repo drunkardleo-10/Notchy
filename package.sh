@@ -20,11 +20,7 @@ DMG="build/Notchy-$VERSION.dmg"
 DMG_LATEST="build/Notchy.dmg"
 rm -f "$DMG" "$DMG_LATEST"
 
-DMG_STAGE=$(mktemp -d)
-cp -R build/notchy.app "$DMG_STAGE/Notchy.app"
-ln -s /Applications "$DMG_STAGE/Applications"
-hdiutil create -volname "Notchy" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG"
-rm -rf "$DMG_STAGE"
+./make-dmg.sh build/notchy.app "$DMG"
 cp "$DMG" "$DMG_LATEST"
 
 echo "Created $DMG"
