@@ -24,6 +24,11 @@ final class ShelfStore: ObservableObject {
     func remove(_ item: ShelfItem) { items.removeAll { $0 == item } }
     func clear() { items.removeAll() }
 
+    func addDropped(_ urls: [URL]) {
+        lastInternalDrop = Date()
+        add(urls)
+    }
+
     func removeDraggedOut(_ item: ShelfItem) {
         guard Date().timeIntervalSince(lastInternalDrop) > 0.6 else { return }
         remove(item)

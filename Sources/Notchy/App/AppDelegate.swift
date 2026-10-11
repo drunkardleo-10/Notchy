@@ -57,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         additionalDisplays[activeDisplayID ?? ""]?.panel ?? primaryPanel
     }
     private var basket: BasketController!
+    private var dropCatcher: ShelfDropCatcher!
     private var statusItem: NSStatusItem!
     private var statusIcon: StatusItemIcon?
     private let updater = AppUpdater()
@@ -91,6 +92,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Pref.registerDefaults()
         onboarding = OnboardingModel(agents: agents, media: media, calendar: calendar)
         basket = BasketController(shelf: shelf)
+        dropCatcher = ShelfDropCatcher(
+            onTarget: { [weak self] targeted in self?.state.dropTargeted = targeted },
+            onDrop: { [weak self] urls in self?.shelf.addDropped(urls) }
+        )
         setUpPanel()
         setUpStatusItem()
         updater.start()
@@ -612,12 +617,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             draggingContent = false
             reversals.removeAll()
             basket.scheduleHide()
+            let dropState = state
+            let dropPanel = panel
+            dropCatcher.hide(after: 0.4) {
+                dropState.dropTargeted = false
+                if dropState.expanded { dropPanel?.ignoresMouseEvents = false }
+            }
         case .leftMouseDragged:
             if !draggingContent {
                 let dragPb = NSPasteboard(name: .drag)
-                let validTypes: [NSPasteboard.PasteboardType] = [.fileURL, .URL, .string]
-                let hasValid = dragPb.types?.contains(where: validTypes.contains) ?? false
-                if (hasValid && dragPb.changeCount != dragBaseline) || (hasValid && dragPb.pasteboardItems?.isEmpty == false) {
+                let hasValid = dragPb.types?.contains(where: Self.shelfDragTypes.contains) ?? false
+                if hasValid && dragPb.changeCount != dragBaseline {
                     draggingContent = true
                 }
             }
@@ -625,7 +635,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default: break
         }
         evaluateHover()
+        syncDropCatcher()
     }
+
+    private func syncDropCatcher() {
+        guard draggingContent else { return }
+        guard Pref.bool(Pref.shelf), state.expanded, let screen = panel.screen else {
+            dropCatcher.hide()
+            return
+        }
+        let size = state.expandedSize
+        let f = screen.frame
+        panel.ignoresMouseEvents = true
+        dropCatcher.show(frame: NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height, width: size.width, height: size.height))
+    }
+
+    private static let shelfDragTypes: [NSPasteboard.PasteboardType] = [
+        .fileURL, .tiff, .png,
+        NSPasteboard.PasteboardType("com.apple.pasteboard.promised-file-url"),
+        NSPasteboard.PasteboardType("NSFilenamesPboardType")
+    ]
 
     private func trackJiggle(dx: CGFloat) {
         guard Pref.bool(Pref.basket), abs(dx) > 3 else { return }
@@ -723,8 +752,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let f = screen.frame
         let notch = NotchGeometry.notchSize(for: screen)
         let liveShowing = pomodoro.started || agentActivityShowing || (Pref.bool(Pref.liveActivity) && Pref.bool(Pref.media) && media.hasTrack)
-        let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 8 : draggingContent ? 60 : (state.hoveringNotch ? 16 : 10)
-        let slackY: CGFloat = draggingContent ? 30 : (state.hoveringNotch ? 14 : 8)
+        let slackX: CGFloat = liveShowing ? AgentActivityLayout.sideWidth + 8 : draggingContent ? 24 : (state.hoveringNotch ? 16 : 10)
+        let slackY: CGFloat = draggingContent ? 14 : (state.hoveringNotch ? 14 : 8)
             + (state.hoveringArtwork ? LiveActivityLayout.peekExtraHeight : 0)
             + (agentActivityShowing && agents.headlineVisible ? AgentActivityLayout.rowHeight : 0)
         let hot = abs(loc.x - f.midX) <= notch.width / 2 + slackX && loc.y >= f.maxY - notch.height - slackY && loc.y <= f.maxY + 4
@@ -753,6 +782,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 panel: targetPanel,
                 displayID: targetID
             )
+            self?.syncDropCatcher()
         }
         expandWork = work
         pendingExpandDisplayID = targetID
