@@ -144,6 +144,11 @@ struct NotchView: View {
                 leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
                 trailingWidth: HUDLayout.inlineSymbolTrailingWidth
             )
+        case .battery:
+            return NotchAccessoryLayout.centerOffset(
+                leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
+                trailingWidth: HUDLayout.inlineSymbolTrailingWidth
+            )
         default:
             return 0
         }

@@ -13,6 +13,7 @@ struct ShelfItem: Identifiable, Equatable {
 final class ShelfStore: ObservableObject {
     @Published var items: [ShelfItem] = []
     @Published var message: String?
+    private var lastInternalDrop = Date.distantPast
 
     func add(_ urls: [URL]) {
         for url in urls where !items.contains(where: { $0.url == url }) {
@@ -23,9 +24,15 @@ final class ShelfStore: ObservableObject {
     func remove(_ item: ShelfItem) { items.removeAll { $0 == item } }
     func clear() { items.removeAll() }
 
+    func removeDraggedOut(_ item: ShelfItem) {
+        guard Date().timeIntervalSince(lastInternalDrop) > 0.6 else { return }
+        remove(item)
+    }
+
     @discardableResult
     func handleDrop(_ providers: [NSItemProvider]) -> Bool {
         var accepted = false
+        lastInternalDrop = Date()
         for provider in providers {
             if provider.canLoadObject(ofClass: URL.self) {
                 accepted = true

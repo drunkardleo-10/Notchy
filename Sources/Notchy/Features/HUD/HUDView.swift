@@ -105,6 +105,12 @@ enum HUDLayout {
                 leadingWidth: inlineSymbolLeadingWidth,
                 trailingWidth: inlineSymbolTrailingWidth
             )
+        case .battery:
+            return NotchAccessoryLayout.size(
+                notch: notch,
+                leadingWidth: inlineSymbolLeadingWidth,
+                trailingWidth: inlineSymbolTrailingWidth
+            )
         case .message:
             return NotchAccessoryLayout.size(notch: notch, leadingWidth: messageSideWidth, trailingWidth: messageSideWidth)
         default:
@@ -112,7 +118,7 @@ enum HUDLayout {
         }
         var h = notch.height
         switch hud.kind {
-        case .airpods, .battery: h += tallExtraHeight
+        case .airpods: h += tallExtraHeight
         default: break
         }
         return CGSize(
@@ -225,7 +231,7 @@ struct HUDView: View {
             case .airpods(let name, let battery):
                 tallRow(icon: Self.airpodsIcon(name), title: name, subtitle: battery.map { "Connected · \($0)" } ?? "Connected")
             case .battery(let percent, let state):
-                tallRow(icon: Self.batteryIcon(percent, state), title: state.title, subtitle: "\(percent)%", tint: state.tint)
+                inlineSymbolRow(icon: Self.batteryIcon(percent, state), text: "\(percent)%", tint: state.tint, iconSize: 16)
             case .message(let icon, let title, let subtitle):
                 messageRow(icon: icon, title: title, subtitle: subtitle)
             case .lock(let unlocked):
@@ -279,7 +285,7 @@ struct HUDView: View {
         .foregroundStyle(.white)
     }
 
-    private func inlineSymbolRow(icon: String, text: String) -> some View {
+    private func inlineSymbolRow(icon: String, text: String, tint: Color = .white, iconSize: CGFloat = 13) -> some View {
         NotchAccessory(
             notch: notch,
             leadingWidth: HUDLayout.inlineSymbolLeadingWidth,
@@ -289,10 +295,11 @@ struct HUDView: View {
             trailingInset: 4
         ) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: iconSize, weight: .semibold))
+                .foregroundStyle(tint)
         } trailing: {
             Text(text)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
                 .lineLimit(1)
         }
     }
