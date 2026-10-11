@@ -3,46 +3,70 @@ import SwiftUI
 struct ToolsView: View {
     @ObservedObject var highAlert: HighAlertModel
 
-    private static let durations: [(minutes: Int, label: String)] = [(0, "∞"), (30, "30m"), (60, "1h"), (120, "2h")]
+    private var statusText: String {
+        if highAlert.active, let end = highAlert.endsAt {
+            return "Awake until \(end.formatted(date: .omitted, time: .shortened))"
+        }
+        return highAlert.active ? "Mac stays awake" : "Keep Mac and display awake"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "cup.and.saucer.fill")
-                    .foregroundStyle(highAlert.active ? Color.orange : .white.opacity(0.6))
-                Text("High Alert").font(.system(size: 13, weight: .semibold))
-                Spacer()
-                Toggle("", isOn: Binding(get: { highAlert.active }, set: { _ in highAlert.toggle() }))
-                    .toggleStyle(.switch).labelsHidden().scaleEffect(0.8)
-            }
-            HStack(spacing: 6) {
-                ForEach(Self.durations, id: \.minutes) { value, label in
-                    Button {
-                        highAlert.minutes = value
-                        if highAlert.active { highAlert.start() }
-                    } label: {
-                        Text(label).font(.system(size: 11, weight: .medium))
-                            .frame(maxWidth: .infinity).padding(.vertical, 6)
-                            .background(highAlert.minutes == value ? Color.white.opacity(0.22) : .white.opacity(0.07),
-                                        in: RoundedRectangle(cornerRadius: 8))
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                toggleButton
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("High Alert")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(statusText)
+                        .font(.system(size: 11))
+                        .foregroundStyle(highAlert.active ? Color.orange : .white.opacity(0.5))
+                        .contentTransition(.opacity)
                 }
+                .lineLimit(1)
+
+                Spacer(minLength: 12)
+
+                actionPill
             }
-            Group {
-                if highAlert.active, let end = highAlert.endsAt {
-                    Text("Awake until \(end.formatted(date: .omitted, time: .shortened))")
-                } else if highAlert.active {
-                    Text("Mac stays awake until turned off")
-                } else {
-                    Text("Keep your Mac and display from sleeping")
-                }
+            .padding(.horizontal, 4)
+
+            HighAlertDurationPicker(selection: highAlert.minutes, tint: .orange) { value in
+                highAlert.minutes = value
+                if highAlert.active { highAlert.start() }
             }
-            .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
-            Spacer(minLength: 0)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.easeInOut(duration: 0.25), value: highAlert.active)
+    }
+
+    private var toggleButton: some View {
+        Button {
+            withAnimation(.interactiveSpring(response: 0.36, dampingFraction: 0.94)) { highAlert.toggle() }
+        } label: {
+            Image(systemName: "cup.and.saucer.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(highAlert.active ? Color.orange : .white.opacity(0.85))
+                .symbolEffect(.pulse, isActive: highAlert.active)
+                .frame(width: 40, height: 40)
+                .background((highAlert.active ? Color.orange.opacity(0.28) : Color.white.opacity(0.16)), in: Circle())
+        }
+        .buttonStyle(PressScaleStyle())
+    }
+
+    private var actionPill: some View {
+        Button {
+            withAnimation(.interactiveSpring(response: 0.36, dampingFraction: 0.94)) { highAlert.toggle() }
+        } label: {
+            Text(highAlert.active ? "Turn Off" : "Turn On")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(highAlert.active ? .white.opacity(0.85) : Color.orange)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background((highAlert.active ? Color.white.opacity(0.14) : Color.orange.opacity(0.18)), in: Capsule())
+                .contentTransition(.interpolate)
+        }
+        .buttonStyle(PressScaleStyle())
     }
 }
