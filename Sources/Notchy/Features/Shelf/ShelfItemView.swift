@@ -32,7 +32,7 @@ struct ShelfItemView: View {
                 shelf.copy(item)
                 onFlash("Copied")
             }
-            Button("AirDrop…") { shelf.airDrop(item) }
+            Menu("Share") { ShelfShareMenuItems(shelf: shelf, targets: [item]) }
             Divider()
             Button("Zip") { shelf.zip([item]) }
             if shelf.isImage(item) {

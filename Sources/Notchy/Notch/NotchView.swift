@@ -450,7 +450,7 @@ struct NotchView: View {
                     albumArtNamespace: albumArtNamespace,
                     visualizerNamespace: visualizerNamespace
                 )
-                case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted))
+                case .shelf: inset(ShelfView(shelf: shelf, targeted: state.dropTargeted, zone: state.dropZone))
                 case .clipboard: inset(ClipboardView(clipboard: clipboard))
                 case .calendar: inset(CalendarView(calendar: calendar))
                 case .timer: inset(TimerView(pomodoro: pomodoro))

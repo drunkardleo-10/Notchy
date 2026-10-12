@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ShelfItem: Identifiable, Equatable {
     let id = UUID()
     let url: URL
+    let added = Date()
     var name: String { url.lastPathComponent }
     var icon: NSImage { NSWorkspace.shared.icon(forFile: url.path) }
 }
@@ -14,6 +15,23 @@ final class ShelfStore: ObservableObject {
     @Published var items: [ShelfItem] = []
     @Published var message: String?
     private var lastInternalDrop = Date.distantPast
+    private var expiryTimer: Timer?
+
+    init() {
+        expiryTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.removeExpired() }
+        }
+    }
+
+    private func removeExpired() {
+        let minutes = UserDefaults.standard.integer(forKey: Pref.shelfAutoClear)
+        guard minutes > 0, !items.isEmpty else { return }
+        let cutoff = Date().addingTimeInterval(-Double(minutes) * 60)
+        guard items.contains(where: { $0.added < cutoff }) else { return }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.86)) {
+            items.removeAll { $0.added < cutoff }
+        }
+    }
 
     func add(_ urls: [URL]) {
         for url in urls where !items.contains(where: { $0.url == url }) {
@@ -151,9 +169,5 @@ final class ShelfStore: ObservableObject {
     func copy(_ item: ShelfItem) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.writeObjects([item.url as NSURL])
-    }
-
-    func airDrop(_ item: ShelfItem) {
-        NSSharingService(named: .sendViaAirDrop)?.perform(withItems: [item.url])
     }
 }

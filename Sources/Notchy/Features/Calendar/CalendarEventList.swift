@@ -53,6 +53,7 @@ struct CalendarEventList: View {
                 .font(.system(size: 12.5, weight: .bold))
                 .foregroundStyle(Self.tint.opacity(0.75))
             Spacer(minLength: 0)
+            if cal.isDateInToday(date) { EventCountdownLabel(events: events) }
         }
         .font(.system(size: 14, weight: .bold))
         .frame(height: 18)
@@ -80,17 +81,28 @@ private struct EventRow: View {
                 Text(timeText).font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
             }
             Spacer(minLength: 4)
-            if let url = event.joinURL {
-                Button { NSWorkspace.shared.open(url) } label: {
-                    Image(systemName: "video.fill").font(.system(size: 9, weight: .semibold))
-                        .frame(width: 24, height: 20)
-                        .background(Color.green.opacity(0.85), in: Capsule())
-                        .contentShape(Capsule())
-                }.buttonStyle(PressScaleStyle())
-            }
+            if let url = event.joinURL { joinButton(url) }
         }
         .padding(.horizontal, 7).padding(.vertical, 4)
         .background(Color(nsColor: event.color).opacity(0.16), in: RoundedRectangle(cornerRadius: 8))
         .opacity(finished ? 0.45 : 1)
+    }
+
+    private func joinButton(_ url: URL) -> some View {
+        let service = MeetingService(url: url)
+        return Button { NSWorkspace.shared.open(url) } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "video.fill").font(.system(size: 9, weight: .semibold))
+                Text(service == .other ? "Join" : "Join \(service.label)")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .frame(height: 20)
+            .background(Color.green.opacity(0.85), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressScaleStyle())
     }
 }

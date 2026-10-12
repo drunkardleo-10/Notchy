@@ -94,7 +94,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         basket = BasketController(shelf: shelf)
         dropCatcher = ShelfDropCatcher(
             onTarget: { [weak self] targeted in self?.state.dropTargeted = targeted },
-            onDrop: { [weak self] urls in self?.shelf.addDropped(urls) }
+            onZone: { [weak self] zone in self?.state.dropZone = zone },
+            onDrop: { [weak self] urls, zone in
+                switch zone {
+                case .airDrop: self?.shelf.airDrop(urls)
+                case .shelf: self?.shelf.addDropped(urls)
+                }
+            }
         )
         setUpPanel()
         setUpStatusItem()
@@ -621,6 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let dropPanel = panel
             dropCatcher.hide(after: 0.4) {
                 dropState.dropTargeted = false
+                dropState.dropZone = nil
                 if dropState.expanded { dropPanel?.ignoresMouseEvents = false }
             }
         case .leftMouseDragged:

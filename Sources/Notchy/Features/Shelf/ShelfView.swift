@@ -4,6 +4,7 @@ import SwiftUI
 struct ShelfView: View {
     @ObservedObject var shelf: ShelfStore
     let targeted: Bool
+    let zone: ShelfDropZone?
     @State private var isTargeted = false
     @State private var status: String?
     @State private var dissolving: [UUID: Double] = [:]
@@ -14,7 +15,9 @@ struct ShelfView: View {
 
     var body: some View {
         Group {
-            if shelf.items.isEmpty {
+            if targeted {
+                ShelfDropTiles(zone: zone)
+            } else if shelf.items.isEmpty {
                 emptyState
             } else {
                 tray
@@ -77,7 +80,7 @@ struct ShelfView: View {
             .padding(.horizontal, 12)
             .padding(.top, 8)
             .padding(.bottom, 4)
-            .opacity(activeTargeted && !shelf.items.isEmpty ? 1 : 0)
+            .opacity(isTargeted && !targeted && !shelf.items.isEmpty ? 1 : 0)
             .animation(.easeOut(duration: 0.15), value: activeTargeted)
             .allowsHitTesting(false)
     }
@@ -101,17 +104,19 @@ struct ShelfView: View {
         .padding(.trailing, 20)
     }
 
+    private func capsuleLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+            .contentShape(Capsule())
+    }
+
     private func actionButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
-                .contentShape(Capsule())
-        }
+        Button(action: action) { capsuleLabel(title) }
         .buttonStyle(PressScaleStyle())
     }
 

@@ -92,6 +92,7 @@ struct ModulesSettingsTab: View {
                             }
                         }
                         .transition(.opacity.combined(with: .move(edge: .top)))
+                        ShelfAutoClearRow()
                     }
                     CardDivider()
                     ModuleRow(icon: "doc.on.clipboard", color: .orange, title: "Clipboard Manager", subtitle: "History, favorites and OCR", isOn: $clipboard)

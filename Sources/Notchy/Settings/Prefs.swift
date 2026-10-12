@@ -3,6 +3,7 @@ import Foundation
 enum Pref {
     static let shelf = "enableShelf"
     static let basket = "enableBasket"
+    static let shelfAutoClear = "shelfAutoClearMinutes"
     static let clipboard = "enableClipboard"
     static let media = "enableMedia"
     static let hoverOpen = "hoverToOpen"
@@ -58,7 +59,7 @@ enum Pref {
     static func registerDefaults() {
         UserDefaults.standard.register(defaults: [
             media: true,
-            shelf: false, basket: false, clipboard: false,
+            shelf: false, basket: false, clipboard: false, shelfAutoClear: 0,
             timer: false, tools: false,
             calendar: false, claude: false, system: false, mirror: false,
             hoverOpen: true, notchDisplayMode: NotchDisplayMode.main.rawValue,

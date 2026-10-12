@@ -158,6 +158,7 @@ final class NotchState: ObservableObject {
     @Published var tab: NotchTab = .media
     @Published var tabNavigationDirection = 1
     @Published var dropTargeted = false
+    @Published var dropZone: ShelfDropZone?
     @Published var hud: HUDEvent?
     @Published var notchSize = CGSize(width: 190, height: 32)
     @Published var previousSkipAnimationID = 0
